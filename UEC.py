@@ -20,43 +20,47 @@ from jishaku import Flags
 # Initialize constants
 constants = Constants()
 
-class UEC(commands.AutoShardedBot):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.start_time = datetime.now()
-        self.guilds_chunked = asyncio.Event()
-        self.synced = True
-        self.no_auth = False  # Default to False, will be set by run() function
-        
+import discord
+import logging
+from discord.ext import commands
+from constants import constants
 
-async def setup_hook(self):
-    """Bot startup tasks: clearing metadata and syncing slash commands."""
-    # everything else must also be indented one level inside this function
-    logger.info(f"{self.user} setup_hook starting...")
+logger = logging.getLogger(__name__)
 
-    main_server = self.get_guild(constants.main_server_id())
-    if main_server is None:
-        logger.warning("Main server not found, cannot clear linked roles metadata")
-    else:
-        logger.info("Main server found. (Skipping linked roles clearing as method is missing)")
+class UEC(commands.Bot):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.synced = False
 
-    if not self.synced:
-        try:
-            main_guild_id = constants.main_server_id()
-            if main_guild_id:
-                await self.tree.sync(guild=discord.Object(id=main_guild_id))
-                logger.info(f"Command tree synced to main server {main_guild_id}")
-            else:
-                await self.tree.sync()
-                logger.info("Command tree synced globally")
-        except Exception as e:
-            logger.error(f"Error syncing command tree: {e}")
-            if constants.sentry_dsn():
-                import sentry_sdk
-                sentry_sdk.capture_exception(e)
-        self.synced = True
+    async def setup_hook(self):
+        """Bot startup tasks: syncing slash commands."""
+        logger.info("Running setup_hook...")
 
-    logger.info("Bot setup_hook completed successfully")
+        # Try to get main server
+        main_server = self.get_guild(constants.main_server_id())
+        if main_server is None:
+            logger.warning("Main server not found, commands will sync globally.")
+        else:
+            logger.info(f"Main server found: {main_server.name}")
+
+        # Sync commands
+        if not self.synced:
+            try:
+                guild_id = constants.main_server_id()
+                if guild_id:
+                    await self.tree.sync(guild=discord.Object(id=guild_id))
+                    logger.info(f"Commands synced to main server {guild_id}")
+                else:
+                    await self.tree.sync()
+                    logger.info("Commands synced globally")
+                self.synced = True
+            except Exception as e:
+                logger.error(f"Error syncing commands: {e}")
+
+        logger.info("setup_hook finished")
+
+    async def on_ready(self):
+        logger.info(f"Logged in as {self.user} ({self.user.id})")
             
             # Sentry Setup
             if constants.sentry_dsn():
