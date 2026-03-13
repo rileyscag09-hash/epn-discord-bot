@@ -123,7 +123,7 @@ async def on_ready(self):
                     await ctx.reply(embed=embed, ephemeral=True)
                     return False
                 
-                # Check guild block (only if in a guild)
+                # Check guild block (only if in a guild) 
                 if ctx.guild:
                     guild_block = await ctx.bot.blocking_manager.is_guild_blocked(ctx.guild.id)
                     logger.info(f"Guild block result for {ctx.guild.id}: {guild_block}")
