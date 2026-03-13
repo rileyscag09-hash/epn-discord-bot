@@ -1242,7 +1242,7 @@ class Events(commands.Cog):
         """Log when the bot joins a guild."""
         try:
             # Get the logging channel
-            log_channel = self.bot.get_channel(1402189392805630003)
+            log_channel = self.bot.get_channel(1481976236497571900)
             if not log_channel:
                 logger.error("Could not find guild join/leave log channel")
                 return
@@ -1272,7 +1272,7 @@ class Events(commands.Cog):
         """Log when the bot leaves a guild."""
         try:
             # Get the logging channel
-            log_channel = self.bot.get_channel(1402189392805630003)
+            log_channel = self.bot.get_channel(1481976236497571900)
             if not log_channel:
                 logger.error("Could not find guild join/leave log channel")
                 return
