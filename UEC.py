@@ -24,25 +24,21 @@ class UEC(commands.Bot):
         self.synced = False
 
     async def setup_hook(self):
-        """Bot startup tasks."""
+        """Bot startup tasks: loading cogs and syncing commands."""
         logger.info("Running setup_hook...")
 
+        # Load extensions (cogs)
+        await self.load_extensions()
+
+        # Sync commands to main guild first (faster than global)
         main_server = self.get_guild(constants.main_server_id())
-
-        if main_server:
-            logger.info(f"Main server found: {main_server.name}")
-        else:
-            logger.warning("Main server not found, commands will sync globally.")
-
-        # Sync commands
         try:
             if main_server:
                 await self.tree.sync(guild=main_server)
-                logger.info("Commands synced to main server")
+                logger.info(f"Commands synced to main server: {main_server.name}")
             else:
-                await self.tree.sync()
-                logger.info("Commands synced globally")
-
+                await self.tree.sync()  # Global fallback
+                logger.warning("Main server not found, commands synced globally")
             self.synced = True
         except Exception as e:
             logger.error(f"Error syncing commands: {e}")
@@ -89,13 +85,12 @@ class UEC(commands.Bot):
         self.blocking_manager = BlockingManager(self)
         logger.info("Blocking manager initialized")
 
-        # Load cogs
-        await self.load_extensions()
-
         # Add global blocking check
         async def global_block_check(ctx: commands.Context) -> bool:
+            """Prevent blocked users/guilds from using commands."""
             if ctx.author.id == constants.bot_owner_id():
                 return True
+
             if not hasattr(ctx.bot, "blocking_manager") or not ctx.bot.blocking_manager:
                 return True
 
@@ -121,13 +116,14 @@ class UEC(commands.Bot):
         """Filter Sentry events before sending."""
         if constants.environment() == "development":
             return None
-        if hint and 'exc_info' in hint:
-            exc_type, exc_value, exc_traceback = hint['exc_info']
+        if hint and "exc_info" in hint:
+            exc_type, exc_value, exc_traceback = hint["exc_info"]
             if "discord.errors" in str(exc_type) or "discord.Forbidden" in str(exc_type):
                 return None
         return event
 
     async def load_extensions(self):
+        """Load all cogs from cogs folder."""
         Flags.RETAIN = True
         Flags.NO_DM_TRACEBACK = True
         Flags.FORCE_PAGINATOR = True
@@ -142,6 +138,7 @@ class UEC(commands.Bot):
                         module_path = os.path.join(root, file).replace(os.sep, ".")[:-3]
                         try:
                             await self.load_extension(module_path)
+                            logger.info(f"Loaded cog: {module_path}")
                         except Exception as e:
                             logger.error(f"Error loading {module_path}: {e}")
                             traceback.print_exc()
@@ -150,6 +147,7 @@ class UEC(commands.Bot):
             sys.exit("No Cog Folder Found")
 
     async def clear_linked_roles_metadata(self):
+        """Clear all linked roles metadata from Discord."""
         try:
             main_server = self.get_guild(constants.main_server_id())
             if not main_server:
@@ -171,12 +169,14 @@ class UEC(commands.Bot):
             logger.error(f"Error clearing linked roles metadata: {e}")
 
     async def on_message(self, message: discord.Message):
+        """Process incoming messages for commands."""
         await self.wait_until_ready()
         if message.author.bot or message.guild is None:
             return
         await self.process_commands(message)
 
     async def close(self):
+        """Cleanup before closing bot."""
         try:
             from utils.security_logger import close_security_logger
             await close_security_logger()
@@ -184,9 +184,10 @@ class UEC(commands.Bot):
             logger.error(f"Error closing security logger: {e}")
         await super().close()
 
-# At the very bottom of UEC.py
 
-import sys
+# -------------------------
+# Instantiate and run bot
+# -------------------------
 
 # Create intents
 intents = discord.Intents.default()
@@ -194,7 +195,7 @@ intents.members = True
 intents.message_content = True
 intents.presences = True
 
-# Instantiate bot
+# Bot instance
 uec = UEC(
     command_prefix=commands.when_mentioned_or(";"),
     chunk_guilds_at_startup=False,
@@ -212,6 +213,7 @@ uec = UEC(
         replied_user=False
     ),
 )
+
 
 async def run():
     """Run the bot."""
