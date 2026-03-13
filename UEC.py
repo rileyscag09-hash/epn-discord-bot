@@ -64,18 +64,18 @@ async def on_ready(self):
 
     # Sentry Setup
     if constants.sentry_dsn():
-                sentry_sdk.init(
-                    dsn=constants.sentry_dsn(),
-                    environment=constants.sentry_environment(),
-                    traces_sample_rate=1.0,
-                    profiles_sample_rate=1.0,
-                    enable_tracing=True,
-                    before_send=self.before_send,
-                    debug=constants.environment() == "development"
-                )
-                logger.info("Sentry initialized")
-            else:
-                logger.warning("Sentry DSN not configured - error tracking disabled")
+        sentry_sdk.init(
+            dsn=constants.sentry_dsn(),
+            environment=constants.sentry_environment(),
+            traces_sample_rate=1.0,
+            profiles_sample_rate=1.0,
+            enable_tracing=True,
+            before_send=self.before_send,
+            debug=constants.environment() == "development"
+        )
+        logger.info("Sentry initialized")
+    else:
+        logger.warning("Sentry DSN not configured - error tracking disabled")
             
             # Clear linked roles metadata on startup
             await self.clear_linked_roles_metadata()
