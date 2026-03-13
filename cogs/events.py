@@ -1657,9 +1657,11 @@ class Events(commands.Cog):
                     inline=True
                 )
             embed.set_thumbnail(url=message.author.display_avatar.url)
-            embed.set_footer(text=f"Server Ban ID: {server_ban.get('id')} • Banned by: {server_ban.get('banned_by')}")
-            
-                        await notification_channel.send(embed=embed)
+            embed.set_footer(
+                text=f"Server Ban ID: {server_ban.get('id')} • Banned by: {server_ban.get('banned_by')}"
+            )
+
+            await notification_channel.send(embed=embed)
 
         except Exception as e:
             logger.error(f"Error reporting banned server invite: {e}")
@@ -1680,7 +1682,7 @@ class Events(commands.Cog):
             )
             if ignore_check:
                 return
-            
+                
             # Create a mock message object for our detection systems
             mock_message = type('MockMessage', (), {
                 'content': execution.content,
