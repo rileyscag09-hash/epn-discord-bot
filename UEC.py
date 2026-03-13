@@ -45,17 +45,18 @@ class UEC(commands.Bot):
 
         # Sync commands
         if not self.synced:
-            try:
-                guild_id = constants.main_server_id()
-                if guild_id:
-                    await self.tree.sync(guild=discord.Object(id=guild_id))
-                    logger.info(f"Commands synced to main server {guild_id}")
-                else:
-                    await self.tree.sync()
-                    logger.info("Commands synced globally")
-                self.synced = True
-            except Exception as e:
-                logger.error(f"Error syncing commands: {e}")
+try:
+    main_guild = self.get_guild(constants.main_server_id())
+
+    if main_guild:
+        await self.tree.sync(guild=main_guild)
+        logger.info("Commands synced to main server")
+        await self.clear_linked_roles_metadata()
+    else:
+        logger.warning("Main server not found, cannot clear linked roles metadata")
+
+except Exception as e:
+    logger.error(f"Error in setup_hook: {e}")
 
         logger.info("setup_hook finished")
 
