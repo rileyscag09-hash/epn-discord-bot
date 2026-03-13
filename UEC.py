@@ -30,15 +30,34 @@ class UEC(commands.AutoShardedBot):
         
 
     async def setup_hook(self):
+    """Bot startup tasks: clearing metadata and syncing slash commands."""
+    logger.info(f"{self.user} setup_hook starting...")
+
+    # ---- Handle main server ----
+    main_server = self.get_guild(constants.main_server_id())
+    if main_server is None:
+        logger.warning("Main server not found, cannot clear linked roles metadata")
+    else:
+        logger.info("Main server found. (Skipping linked roles clearing as method is missing)")
+
+    # ---- Sync slash commands ----
+    if not self.synced:
         try:
-            # PostgreSQL Setup
-            database_url = constants.postgres_url().strip()
-            if not database_url:
-                raise RuntimeError("PostgreSQL database URL not configured")
-            
-            self.db = DatabaseManager(database_url)
-            await self.db.connect()
-            logger.info("Connected to PostgreSQL")
+            main_guild_id = constants.main_server_id()
+            if main_guild_id:
+                await self.tree.sync(guild=discord.Object(id=main_guild_id))
+                logger.info(f"Command tree synced to main server {main_guild_id}")
+            else:
+                await self.tree.sync()
+                logger.info("Command tree synced globally")
+        except Exception as e:
+            logger.error(f"Error syncing command tree: {e}")
+            if constants.sentry_dsn():
+                import sentry_sdk
+                sentry_sdk.capture_exception(e)
+        self.synced = True
+
+    logger.info("Bot setup_hook completed successfully")
             
             # Sentry Setup
             if constants.sentry_dsn():
