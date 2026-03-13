@@ -1661,10 +1661,8 @@ class Events(commands.Cog):
             
             await notification_channel.send(embed=embed)
             
-        except Exception as e:
+                except Exception as e:
             logger.error(f"Error reporting banned server invite: {e}")
-
-   class Events(commands.Cog):
 
     @commands.Cog.listener()
     async def on_automod_action_execution(self, execution):
