@@ -123,35 +123,35 @@ class Constants():
     # Server and role IDs
     def main_server_id(self) -> int:
         """Get the main server ID."""
-        return 1367173562971983963
+        return 1481746915438755932
     
     def uec_user_notification_channel_id(self) -> int:
         """Get the UEC user ban/unban notification channel ID."""
-        return 1402194064899833906
+        return 1481746917808537797
     
     def uec_server_notification_channel_id(self) -> int:
         """Get the UEC server ban/unban notification channel ID."""
-        return 1408287024842018898
+        return 1481746917808537797
 
     def developer_role_id(self) -> int:
         """Get the developer role ID."""
-        return 1367174319897055343
+        return 1481746915451207785
 
     def staff_role_id(self) -> int:
         """Get the staff role ID."""
-        return 1369494426665091105
+        return 1481746915438755936
     
     def affiliate_server_owner_id(self) -> int:
         """Get the affiliate server owner ID."""
-        return 1402889148796243980
+        return 1481746915438755935
     
     def affiliate_hr_id(self) -> int:
         """Get the affiliate HR role ID."""
-        return 1402889188948578444
+        return 1481746915438755934
 
     def report_channel_id(self) -> int:
         """Get the report channel ID in the main server."""
-        return 1402147024404746360
+        return 1481986056202096763
 
     def twilio_account_sid(self) -> str:
         """Get Twilio Account SID."""
