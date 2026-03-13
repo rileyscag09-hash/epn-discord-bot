@@ -183,3 +183,56 @@ class UEC(commands.Bot):
         except Exception as e:
             logger.error(f"Error closing security logger: {e}")
         await super().close()
+
+# At the very bottom of UEC.py
+
+import sys
+
+# Create intents
+intents = discord.Intents.default()
+intents.members = True
+intents.message_content = True
+intents.presences = True
+
+# Instantiate bot
+uec = UEC(
+    command_prefix=commands.when_mentioned_or(";"),
+    chunk_guilds_at_startup=False,
+    help_command=None,
+    intents=intents,
+    owner_id=constants.bot_owner_id(),
+    activity=discord.Activity(
+        type=discord.ActivityType.listening,
+        name="Protecting the community 1 server at a time%"
+    ),
+    allowed_mentions=discord.AllowedMentions(
+        everyone=False,
+        users=True,
+        roles=True,
+        replied_user=False
+    ),
+)
+
+async def run():
+    """Run the bot."""
+    dev_mode = "--dev" in sys.argv
+    no_auth = "--no-auth" in sys.argv
+    uec.no_auth = no_auth
+
+    try:
+        token_value = constants.dev_token() if dev_mode else constants.token()
+        logger.info(f"Running in {'development' if dev_mode else 'production'} mode")
+    except Exception as e:
+        logger.critical(f"Failed to get bot token: {e}")
+        return
+
+    try:
+        async with uec:
+            await uec.start(token_value)
+    except KeyboardInterrupt:
+        logger.info("Bot shutdown requested")
+    except Exception as e:
+        logger.error(f"Critical error running bot: {e}")
+        if constants.sentry_dsn():
+            sentry_sdk.capture_exception(e)
+        raise
