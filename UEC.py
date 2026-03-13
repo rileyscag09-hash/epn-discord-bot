@@ -59,11 +59,11 @@ class UEC(commands.Bot):
 
         logger.info("setup_hook finished")
 
-    async def on_ready(self):
-        logger.info(f"Logged in as {self.user} ({self.user.id})")
-            
-            # Sentry Setup
-            if constants.sentry_dsn():
+async def on_ready(self):
+    logger.info(f"Logged in as {self.user} ({self.user.id})")
+
+    # Sentry Setup
+    if constants.sentry_dsn():
                 sentry_sdk.init(
                     dsn=constants.sentry_dsn(),
                     environment=constants.sentry_environment(),
@@ -183,10 +183,6 @@ class UEC(commands.Bot):
         else:
             logger.critical("No Cog Folder Found")
             sys.exit("No Cog Folder Found")
-
-@watch(path="cogs", preload=False)
-async def on_ready(self):
-    logger.info(f"Logged in as {self.user}")
 
     if not self.synced:
         try:
