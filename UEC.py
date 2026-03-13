@@ -29,18 +29,17 @@ class UEC(commands.AutoShardedBot):
         self.no_auth = False  # Default to False, will be set by run() function
         
 
-    async def setup_hook(self):
+async def setup_hook(self):
     """Bot startup tasks: clearing metadata and syncing slash commands."""
+    # everything else must also be indented one level inside this function
     logger.info(f"{self.user} setup_hook starting...")
 
-    # ---- Handle main server ----
     main_server = self.get_guild(constants.main_server_id())
     if main_server is None:
         logger.warning("Main server not found, cannot clear linked roles metadata")
     else:
         logger.info("Main server found. (Skipping linked roles clearing as method is missing)")
 
-    # ---- Sync slash commands ----
     if not self.synced:
         try:
             main_guild_id = constants.main_server_id()
