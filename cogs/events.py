@@ -1665,21 +1665,21 @@ class Events(commands.Cog):
             logger.error(f"Error reporting banned server invite: {e}")
 
     @commands.Cog.listener()
-    async def on_automod_action_execution(self, execution: discord.AutoModActionExecution):
-        """Handle AutoMod action execution events for blocked messages."""
-        try:
-            # Only handle blocked messages (not other actions like timeouts)
-            if execution.action.type != discord.AutoModActionType.block_message:
-                return
-            
-            # Skip if no content or from bot
-            if not execution.content or execution.member.bot:
-                return
-                
-            # Check if channel is ignored
-            ignore_check = await self.bot.db.find_ignore(execution.guild.id, channel_id=execution.channel.id)
-            if ignore_check:
-                return
+async def on_automod_action_execution(self, execution):
+    """Handle AutoMod action execution events for blocked messages."""
+    try:
+        if execution.action.type != discord.AutoModActionType.block_message:
+            return
+
+        if not execution.content or not execution.member or execution.member.bot:
+            return
+
+        ignore_check = await self.bot.db.find_ignore(
+            execution.guild.id,
+            channel_id=execution.channel.id
+        )
+        if ignore_check:
+            return
             
             # Create a mock message object for our detection systems
             mock_message = type('MockMessage', (), {
