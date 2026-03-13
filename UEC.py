@@ -161,20 +161,25 @@ class UEC(commands.AutoShardedBot):
         else:
             logger.critical("No Cog Folder Found")
             sys.exit("No Cog Folder Found")
-    
-    @watch(path="cogs", preload=False)
-    async def on_ready(self):
-        logger.info(f"Logged in as {self.user}")
-        if not self.synced:
-            try:
-                await self.tree.sync()
-                logger.info("Command tree synced.")
-            except Exception as e:
-                logger.error(f"Error syncing command tree: {e}")
-                if constants.sentry_dsn():
-                    sentry_sdk.capture_exception(e)
-            self.synced = True
 
+@watch(path="cogs", preload=False)
+async def on_ready(self):
+    logger.info(f"Logged in as {self.user}")
+
+    if not self.synced:
+        try:
+            # Sync commands only to main server (faster, avoids global rate limits)
+            main_guild = discord.Object(id=constants.main_server_id())
+            await self.tree.sync(guild=main_guild)
+            
+            logger.info(f"Command tree synced for main server: {main_guild.id}")
+        except Exception as e:
+            logger.error(f"Error syncing command tree: {e}")
+            if constants.sentry_dsn():
+                sentry_sdk.capture_exception(e)
+
+        self.synced = True
+        
     async def on_error(self, event_method: str, *args, **kwargs):
         """Global error handler for bot events."""
         import uuid
