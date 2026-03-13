@@ -1659,9 +1659,9 @@ class Events(commands.Cog):
             embed.set_thumbnail(url=message.author.display_avatar.url)
             embed.set_footer(text=f"Server Ban ID: {server_ban.get('id')} • Banned by: {server_ban.get('banned_by')}")
             
-            await notification_channel.send(embed=embed)
-            
-                except Exception as e:
+                        await notification_channel.send(embed=embed)
+
+        except Exception as e:
             logger.error(f"Error reporting banned server invite: {e}")
 
     @commands.Cog.listener()
