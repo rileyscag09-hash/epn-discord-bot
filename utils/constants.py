@@ -132,10 +132,10 @@ class Constants():
     def main_server_id(self) -> int:
         return 1481746915438755932
 
-    def uec_user_notification_channel_id(self) -> int:
+    def EPN_user_notification_channel_id(self) -> int:
         return 1481746917808537797
 
-    def uec_server_notification_channel_id(self) -> int:
+    def EPN_server_notification_channel_id(self) -> int:
         return 1481746917808537797
 
     def developer_role_id(self) -> int:
@@ -208,30 +208,30 @@ class Constants():
     # -------------------------
 
     def internal_api_host(self) -> str:
-        host = os.getenv("UEC_INTERNAL_API_HOST")
+        host = os.getenv("EPN_INTERNAL_API_HOST")
         if not host:
-            logger.warning("UEC_INTERNAL_API_HOST not set.")
+            logger.warning("EPN_INTERNAL_API_HOST not set.")
             return ""
         return host
 
     def internal_api_port(self) -> int:
-        port_str = os.getenv("UEC_INTERNAL_API_PORT")
+        port_str = os.getenv("EPN_INTERNAL_API_PORT")
 
         if not port_str:
-            logger.warning("UEC_INTERNAL_API_PORT not set.")
+            logger.warning("EPN_INTERNAL_API_PORT not set.")
             return 0
 
         try:
             return int(port_str)
         except ValueError:
-            logger.error("UEC_INTERNAL_API_PORT is not a valid integer.")
+            logger.error("EPN_INTERNAL_API_PORT is not a valid integer.")
             return 0
 
     def internal_api_key(self) -> str:
-        key = os.getenv("UEC_INTERNAL_API_KEY", "")
+        key = os.getenv("EPN_INTERNAL_API_KEY", "")
 
         if not key:
-            logger.warning("UEC_INTERNAL_API_KEY not set.")
+            logger.warning("EPN_INTERNAL_API_KEY not set.")
 
         return key
 
