@@ -629,8 +629,8 @@ class AIModerationService:
             # Use OpenRouter client with Google Gemini 2.0 Flash (experimental) for AI confidence analysis
             response = self.openrouter_client.chat.completions.create(
                 extra_headers={
-                    "HTTP-Referer": "https://uec.jadyn.au",
-                    "X-Title": "UEC Bot Moderation"
+                    "HTTP-Referer": "https://EPN.jadyn.au",
+                    "X-Title": "EPN Bot Moderation"
                 },
                 model="google/gemini-2.5-flash",
                 messages=[
