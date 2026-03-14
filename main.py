@@ -4,7 +4,7 @@ Entry point for the application.
 import asyncio
 import sys
 
-from UEC import run
+from EPN import run
 from utils.constants import logger
 
 
