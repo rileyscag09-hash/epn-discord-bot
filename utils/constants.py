@@ -1,4 +1,3 @@
-```python
 import os
 import colorlog
 import logging
