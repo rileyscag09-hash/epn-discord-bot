@@ -1,5 +1,5 @@
 """
-Suspicious Activity Detection System for UEC Bot.
+Suspicious Activity Detection System for EPN Bot.
 
 This module implements various triggers for detecting and logging suspicious activities.
 """
