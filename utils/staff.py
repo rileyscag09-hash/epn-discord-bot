@@ -313,7 +313,7 @@ class StaffUtils:
 
     @staticmethod
     async def is_blacklisted(user_id: int) -> bool:
-        """Check if user is blacklisted from UEC."""
+        """Check if user is blacklisted from EPN."""
         from utils.constants import logger
         
         try:
