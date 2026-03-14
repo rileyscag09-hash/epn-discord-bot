@@ -5,7 +5,6 @@ import sys
 import sentry_sdk
 import traceback
 import logging
-import aiosqlite
 
 from datetime import datetime
 from discord.ext import commands
@@ -15,6 +14,7 @@ from jishaku import Flags
 from utils.constants import logger, Constants, EmbedDesign
 from utils.twilio_verification import TwilioVerificationService, CommandVerifier
 from utils.blocking import BlockingManager
+from utils.database import DatabaseManager
 
 constants = Constants()
 logger = logging.getLogger(__name__)
@@ -26,13 +26,12 @@ class UEC(commands.Bot):
         super().__init__(**kwargs)
 
         self.synced = False
-        self.db: aiosqlite.Connection | None = None
+        self.db: DatabaseManager | None = None
         self.verification_service = None
         self.command_verifier = None
         self.blocking_manager = None
 
     async def setup_hook(self):
-        """Startup hook"""
 
         logger.info("Running setup_hook...")
 
@@ -40,15 +39,14 @@ class UEC(commands.Bot):
         # DATABASE CONNECTION
         # -------------------------
         try:
-            os.makedirs("data", exist_ok=True)
 
-            self.db = await aiosqlite.connect("data/database.db")
-            await self.db.execute("PRAGMA journal_mode=WAL;")
-            await self.db.commit()
+            self.db = DatabaseManager(constants.database_url())
+            await self.db.connect()
 
             logger.info("Database connected successfully")
 
         except Exception as e:
+
             logger.critical(f"Database connection failed: {e}")
             raise
 
@@ -63,16 +61,21 @@ class UEC(commands.Bot):
         main_server = self.get_guild(constants.main_server_id())
 
         try:
+
             if main_server:
+
                 await self.tree.sync(guild=main_server)
                 logger.info(f"Commands synced to {main_server.name}")
+
             else:
+
                 await self.tree.sync()
                 logger.info("Commands synced globally")
 
             self.synced = True
 
         except Exception as e:
+
             logger.error(f"Command sync failed: {e}")
 
         logger.info("setup_hook completed")
@@ -198,6 +201,7 @@ class UEC(commands.Bot):
         await self.load_extension("jishaku")
 
         if not os.path.exists("cogs"):
+
             logger.critical("No Cog Folder Found")
             sys.exit()
 
@@ -240,10 +244,12 @@ class UEC(commands.Bot):
         try:
 
             if self.db:
-                await self.db.close()
-                logger.info("Database closed")
+
+                await self.db.disconnect()
+                logger.info("Database disconnected")
 
         except Exception as e:
+
             logger.error(f"Error closing DB: {e}")
 
         await super().close()
