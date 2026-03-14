@@ -1,5 +1,5 @@
 """
-PostgreSQL database models and connection management for UEC Bot.
+PostgreSQL database models and connection management for EPN Bot.
 """
 import asyncpg
 import databases
@@ -1070,7 +1070,7 @@ class DatabaseManager:
     
     # Authorized servers operations
     async def authorize_server(self, guild_id: int, guild_name: str, authorized_by: int, reason: str = None) -> int:
-        """Authorize a server for UEC access."""
+        """Authorize a server for EPN access."""
         query = """
             INSERT INTO authorized_servers (guild_id, guild_name, authorized_by, reason) 
             VALUES (:guild_id, :guild_name, :authorized_by, :reason) 
@@ -1091,7 +1091,7 @@ class DatabaseManager:
         })
     
     async def deauthorize_server(self, guild_id: int, deauthorized_by: int, reason: str = None) -> bool:
-        """Deauthorize a server from UEC access."""
+        """Deauthorize a server from EPN access."""
         query = """
             UPDATE authorized_servers 
             SET active = FALSE, authorized_by = :deauthorized_by, authorized_at = CURRENT_TIMESTAMP, reason = :reason
@@ -1105,7 +1105,7 @@ class DatabaseManager:
         return result is not None and result > 0
     
     async def is_server_authorized(self, guild_id: int) -> bool:
-        """Check if a server is authorized for UEC access."""
+        """Check if a server is authorized for EPN access."""
         query = "SELECT 1 FROM authorized_servers WHERE guild_id = :guild_id AND active = TRUE LIMIT 1"
         result = await self.database.fetch_one(query=query, values={"guild_id": guild_id})
         return result is not None
