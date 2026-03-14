@@ -322,4 +322,3 @@ handler.setFormatter(log)
 logger = logging.getLogger(__name__)
 logger.addHandler(handler)
 logger.setLevel(logging.DEBUG)
-```
