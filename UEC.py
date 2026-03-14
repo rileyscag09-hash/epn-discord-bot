@@ -20,7 +20,7 @@ constants = Constants()
 logger = logging.getLogger(__name__)
 
 
-class UEC(commands.Bot):
+class EPN(commands.Bot):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -264,7 +264,7 @@ intents.message_content = True
 intents.presences = True
 
 
-uec = UEC(
+EPN = EPN(
     command_prefix=commands.when_mentioned_or(";"),
     help_command=None,
     intents=intents,
@@ -305,8 +305,8 @@ async def run():
 
     try:
 
-        async with uec:
-            await uec.start(token)
+        async with EPN:
+            await EPN.start(token)
 
     except KeyboardInterrupt:
 
