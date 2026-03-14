@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # Initialize constants
 constants = Constants()
 
-class UECCommands(commands.Cog):
+class EPNCommands(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.security_logger = get_security_logger(bot)
@@ -27,7 +27,7 @@ class UECCommands(commands.Cog):
         self.admin_rate_limiter = UserCommandRateLimiter(
             max_requests=3,
             time_window=3600,  # 1 hour in seconds
-            command_name="uec_admin_commands"
+            command_name="EPN_admin_commands"
         )
 
     def parse_duration(self, duration_str: str) -> datetime:
@@ -84,28 +84,28 @@ class UECCommands(commands.Cog):
                 else:
                     time_str = f"{wait_seconds}s"
                 
-                error_msg = f"You have reached the rate limit for UEC commands (3 per hour). Try again in {time_str}."
+                error_msg = f"You have reached the rate limit for EPN commands (3 per hour). Try again in {time_str}."
             else:
-                error_msg = f"You have reached the rate limit for UEC commands (3 per hour). {remaining} requests remaining."
+                error_msg = f"You have reached the rate limit for EPN commands (3 per hour). {remaining} requests remaining."
             
             return False, error_msg
         
         return True, None
 
-    @commands.hybrid_group(name="uec", description="UEC moderation commands")
+    @commands.hybrid_group(name="EPN", description="EPN moderation commands")
     @app_commands.allowed_installs(guilds=True, users=False)
     @app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
-    async def uec_group(self, ctx: commands.Context):
-        """UEC moderation commands."""
+    async def EPN_group(self, ctx: commands.Context):
+        """EPN moderation commands."""
         if not ctx.invoked_subcommand:
             embed = EmbedDesign.info(
-                title="UEC Commands",
-                description="Available UEC moderation commands:",
+                title="EPN Commands",
+                description="Available EPN moderation commands:",
                 fields=[
                     {"name": "ban", "value": "Ban a user across all guilds", "inline": True},
                     {"name": "unban", "value": "Unban a user across all guilds", "inline": True},
-                    {"name": "serverban", "value": "Ban a server from UEC", "inline": True},
-                    {"name": "serverunban", "value": "Unban a server from UEC", "inline": True},
+                    {"name": "serverban", "value": "Ban a server from EPN", "inline": True},
+                    {"name": "serverunban", "value": "Unban a server from EPN", "inline": True},
                     {"name": "history", "value": "View ban history for a user", "inline": True},
                     {"name": "update", "value": "Update ban details", "inline": True},
                     {"name": "sync", "value": "Force sync commands (Dev)", "inline": True},
@@ -118,7 +118,7 @@ class UECCommands(commands.Cog):
         """Send ban notification to the specified channel."""
         try:
             # Get the notification channel
-            notification_channel = self.bot.get_channel(constants.uec_user_notification_channel_id())
+            notification_channel = self.bot.get_channel(constants.EPN_user_notification_channel_id())
             if not notification_channel:
                 logger.error("Notification channel not found")
                 return
@@ -130,7 +130,7 @@ class UECCommands(commands.Cog):
             current_time = datetime.utcnow()
             
             # Build description with additional details
-            description_parts = [f"{user.mention} ({user.id}) was {action.lower()} in {guild_name or 'UEC'} by {staff_member.mention}"]
+            description_parts = [f"{user.mention} ({user.id}) was {action.lower()} in {guild_name or 'EPN'} by {staff_member.mention}"]
             description_parts.append(f"**Reason:** {reason}")
             
             if evidence:
@@ -144,13 +144,13 @@ class UECCommands(commands.Cog):
             
             # Create clean title for user actions
             if action.lower() == "ban":
-                title = "🚫 UEC User Ban"
+                title = "🚫 EPN User Ban"
             elif action.lower() == "unban":
-                title = "✅ UEC User Unban"
+                title = "✅ EPN User Unban"
             elif action.lower() == "update":
-                title = "📝 UEC Ban Update"
+                title = "📝 EPN Ban Update"
             else:
-                title = f"UEC {action.title()}"
+                title = f"EPN {action.title()}"
             
             # Create notification embed
             embed = EmbedDesign.create_embed(
@@ -168,7 +168,7 @@ class UECCommands(commands.Cog):
         """Send server ban notification to the specified channel."""
         try:
             # Get the notification channel
-            notification_channel = self.bot.get_channel(constants.uec_server_notification_channel_id())
+            notification_channel = self.bot.get_channel(constants.EPN_server_notification_channel_id())
             if not notification_channel:
                 logger.error("Notification channel not found")
                 return
@@ -195,11 +195,11 @@ class UECCommands(commands.Cog):
             
             # Create clean title for server actions
             if action.lower() in ["serverban", "ban"]:
-                title = "🚫 UEC Server Ban"
+                title = "🚫 EPN Server Ban"
             elif action.lower() in ["serverunban", "unban"]:
-                title = "✅ UEC Server Unban"
+                title = "✅ EPN Server Unban"
             else:
-                title = f"UEC Server {action.title()}"
+                title = f"EPN Server {action.title()}"
             
             # Create notification embed
             embed = EmbedDesign.create_embed(
@@ -213,7 +213,7 @@ class UECCommands(commands.Cog):
         except Exception as e:
             logger.error(f"Error sending server ban notification: {e}")
 
-    @uec_group.command(name="ban", description="Ban a user across all guilds")
+    @EPN_group.command(name="ban", description="Ban a user across all guilds")
     @app_commands.allowed_installs(guilds=True, users=False)
     @app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     @app_commands.describe(
@@ -229,7 +229,7 @@ class UECCommands(commands.Cog):
         if not await self.bot.db.is_server_authorized(ctx.guild.id):
             embed = EmbedDesign.error(
                 title="Server Not Authorized",
-                description="This server is not authorized for UEC access. Only authorized servers can use UEC commands."
+                description="This server is not authorized for EPN access. Only authorized servers can use EPN commands."
             )
             await ctx.reply(embed=embed, ephemeral=True)
             return
@@ -241,7 +241,7 @@ class UECCommands(commands.Cog):
         if not (has_admin or has_staff):
             embed = EmbedDesign.error(
                 title="Permission Denied",
-                description="You must have either Administrator permissions in this server OR staff permissions to use UEC commands."
+                description="You must have either Administrator permissions in this server OR staff permissions to use EPN commands."
             )
             await ctx.reply(embed=embed, ephemeral=True)
             return
@@ -270,7 +270,7 @@ class UECCommands(commands.Cog):
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
-                # Check if target user is core staff or developer (protected from UEC bans)
+                # Check if target user is core staff or developer (protected from EPN bans)
                 target_is_core_staff = await StaffUtils.has_core_staff_permission_cross_guild(self.bot, user, "ban")
                 if target_is_core_staff:
                     embed = EmbedDesign.error(title="Protected User", description="You cannot ban staff members or developers.")
@@ -301,13 +301,13 @@ class UECCommands(commands.Cog):
                 for guild in self.bot.guilds:
                     if guild.id != constants.main_server_id():
                         try:
-                            await guild.ban(user, reason=f"UEC Blacklist: {reason}")
+                            await guild.ban(user, reason=f"EPN Blacklist: {reason}")
                             banned_guilds.append(guild.name)
                         except Exception as e:
                             failed_guilds.append(guild.name)
                             logger.error(f"Failed to ban user from {guild.name}: {e}")
 
-                embed = EmbedDesign.success(title="User Blacklisted", description=f"**{user.display_name}** has been added to the UEC blacklist.")
+                embed = EmbedDesign.success(title="User Blacklisted", description=f"**{user.display_name}** has been added to the EPN blacklist.")
                 await interaction.followup.send(embed=embed)
                 await self.send_ban_notification("ban", user, reason, interaction.user, "Cross-Guild Ban", evidence, expires_at, appealable)
 
@@ -318,7 +318,7 @@ class UECCommands(commands.Cog):
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
 
-    @uec_group.command(name="unban", description="Unban a user across all guilds")
+    @EPN_group.command(name="unban", description="Unban a user across all guilds")
     @app_commands.allowed_installs(guilds=True, users=False)
     @app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     @app_commands.describe(user="The user to unban", reason="Reason for the unban")
@@ -328,7 +328,7 @@ class UECCommands(commands.Cog):
         if not await self.bot.db.is_server_authorized(ctx.guild.id):
             embed = EmbedDesign.error(
                 title="Server Not Authorized",
-                description="This server is not authorized for UEC access. Only authorized servers can use UEC commands."
+                description="This server is not authorized for EPN access. Only authorized servers can use EPN commands."
             )
             await ctx.reply(embed=embed, ephemeral=True)
             return
@@ -340,7 +340,7 @@ class UECCommands(commands.Cog):
         if not (has_admin or has_staff):
             embed = EmbedDesign.error(
                 title="Permission Denied",
-                description="You must have either Administrator permissions in this server OR staff permissions to use UEC commands."
+                description="You must have either Administrator permissions in this server OR staff permissions to use EPN commands."
             )
             await ctx.reply(embed=embed, ephemeral=True)
             return
@@ -362,7 +362,7 @@ class UECCommands(commands.Cog):
                 unbanned_guilds, failed_guilds = [], []
                 for guild in self.bot.guilds:
                     try:
-                        await guild.unban(user, reason="UEC Unblacklist")
+                        await guild.unban(user, reason="EPN Unblacklist")
                         unbanned_guilds.append(guild.name)
                     except discord.NotFound:
                         pass
@@ -391,7 +391,7 @@ class UECCommands(commands.Cog):
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
 
-    @uec_group.command(name="history", description="View ban history for a user")
+    @EPN_group.command(name="history", description="View ban history for a user")
     @app_commands.allowed_installs(guilds=True, users=False)
     @app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     @app_commands.describe(
@@ -407,7 +407,7 @@ class UECCommands(commands.Cog):
         if not await self.bot.db.is_server_authorized(ctx.guild.id):
             embed = EmbedDesign.error(
                 title="Server Not Authorized",
-                description="This server is not authorized for UEC access. Only authorized servers can use UEC commands."
+                description="This server is not authorized for EPN access. Only authorized servers can use EPN commands."
             )
             await ctx.reply(embed=embed, ephemeral=True)
             return
@@ -419,7 +419,7 @@ class UECCommands(commands.Cog):
         if not (has_admin or has_staff):
             embed = EmbedDesign.error(
                 title="Permission Denied",
-                description="You must have either Administrator permissions in this server OR staff permissions to use UEC commands."
+                description="You must have either Administrator permissions in this server OR staff permissions to use EPN commands."
             )
             await ctx.reply(embed=embed, ephemeral=True)
             return
@@ -518,11 +518,11 @@ class UECCommands(commands.Cog):
 
         # Add footer with useful info
         active_count = sum(1 for r in blacklist_records if r.get("active", False))
-        embed.set_footer(text=f"Active bans: {active_count}/{len(blacklist_records)} • Use /uec update to modify active bans")
+        embed.set_footer(text=f"Active bans: {active_count}/{len(blacklist_records)} • Use /EPN update to modify active bans")
 
         await ctx.reply(embed=embed, ephemeral=True)
 
-    @uec_group.command(name="update", description="Update ban details")
+    @EPN_group.command(name="update", description="Update ban details")
     @app_commands.allowed_installs(guilds=True, users=False)
     @app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     @app_commands.describe(
@@ -546,7 +546,7 @@ class UECCommands(commands.Cog):
         if not await self.bot.db.is_server_authorized(ctx.guild.id):
             embed = EmbedDesign.error(
                 title="Server Not Authorized",
-                description="This server is not authorized for UEC access. Only authorized servers can use UEC commands."
+                description="This server is not authorized for EPN access. Only authorized servers can use EPN commands."
             )
             await ctx.reply(embed=embed, ephemeral=True)
             return
@@ -558,7 +558,7 @@ class UECCommands(commands.Cog):
         if not (has_admin or has_staff):
             embed = EmbedDesign.error(
                 title="Permission Denied",
-                description="You must have either Administrator permissions in this server OR staff permissions to use UEC commands."
+                description="You must have either Administrator permissions in this server OR staff permissions to use EPN commands."
             )
             await ctx.reply(embed=embed, ephemeral=True)
             return
@@ -579,12 +579,12 @@ class UECCommands(commands.Cog):
 
                 # Get current blacklist record (bypass cache to ensure fresh data)
                 current_record = await self.bot.db.find_blacklist(user.id, active=True, use_cache=False)
-                logger.info(f"UEC Update - Looking for active ban for user {user.id}: {current_record is not None}")
+                logger.info(f"EPN Update - Looking for active ban for user {user.id}: {current_record is not None}")
                 
                 if not current_record:
                     # Try to find any blacklist record for this user (active or inactive)
                     all_records = await self.bot.db.find_all_blacklist_by_user(user.id, limit=5)
-                    logger.info(f"UEC Update - All blacklist records for user {user.id}: {len(all_records)} records found")
+                    logger.info(f"EPN Update - All blacklist records for user {user.id}: {len(all_records)} records found")
                     
                     if all_records:
                         # User has ban history but no active ban
@@ -637,14 +637,14 @@ class UECCommands(commands.Cog):
                         # Multiple fields being updated, use the full update method
                         result = await self.bot.db.update_blacklist_full(user.id, interaction.user.id, **update_data)
                     
-                    logger.info(f"UEC Update - Database update result for user {user.id}: {result}")
+                    logger.info(f"EPN Update - Database update result for user {user.id}: {result}")
                     
                     # Record the command usage for rate limiting
                     if has_admin and not has_staff:
                         await self.admin_rate_limiter.record_request(interaction.user.id)
                         
                 except Exception as e:
-                    logger.error(f"UEC Update - Database error for user {user.id}: {e}")
+                    logger.error(f"EPN Update - Database error for user {user.id}: {e}")
                     embed = EmbedDesign.error(
                         title="Database Error",
                         description="Failed to update ban details due to a database error."
@@ -704,17 +704,17 @@ class UECCommands(commands.Cog):
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
 
-    @uec_group.command(name="serverban", description="Ban a server from UEC")
+    @EPN_group.command(name="serverban", description="Ban a server from EPN")
     @app_commands.allowed_installs(guilds=True, users=False)
     @app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     @app_commands.describe(guild_id="The guild ID to ban", reason="Reason for the server ban", evidence="Evidence for the ban", expires="When the ban expires", appealable="Whether the ban can be appealed")
     async def server_ban(self, ctx: commands.Context, guild_id: str, reason: str = "No reason provided", evidence: str = None, expires: str = None, appealable: bool = True):
-        """Ban a server from UEC."""
+        """Ban a server from EPN."""
         # Check if server is authorized before starting verification
         if not await self.bot.db.is_server_authorized(ctx.guild.id):
             embed = EmbedDesign.error(
                 title="Server Not Authorized",
-                description="This server is not authorized for UEC access. Only authorized servers can use UEC commands."
+                description="This server is not authorized for EPN access. Only authorized servers can use EPN commands."
             )
             await ctx.reply(embed=embed, ephemeral=True)
             return
@@ -752,7 +752,7 @@ class UECCommands(commands.Cog):
 
                 await self.bot.db.insert_server_ban(guild_id_int, guild_name, reason, evidence or "", interaction.user.id, expires_at, appealable)
                 
-                embed = EmbedDesign.success(title="Server Banned", description=f"**{guild_name}** has been banned from UEC.")
+                embed = EmbedDesign.success(title="Server Banned", description=f"**{guild_name}** has been banned from EPN.")
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 await self.send_server_ban_notification("serverban", guild_id_int, guild_name, reason, interaction.user, evidence, expires_at, appealable)
             except Exception as e:
@@ -762,17 +762,17 @@ class UECCommands(commands.Cog):
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
 
-    @uec_group.command(name="serverunban", description="Unban a server from UEC")
+    @EPN_group.command(name="serverunban", description="Unban a server from EPN")
     @app_commands.allowed_installs(guilds=True, users=False)
     @app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     @app_commands.describe(guild_id="The guild ID to unban", reason="Reason for the unban")
     async def server_unban(self, ctx: commands.Context, guild_id: str, *, reason: str = "Appeal accepted"):
-        """Unban a server from UEC."""
+        """Unban a server from EPN."""
         # Check if server is authorized before starting verification
         if not await self.bot.db.is_server_authorized(ctx.guild.id):
             embed = EmbedDesign.error(
                 title="Server Not Authorized",
-                description="This server is not authorized for UEC access. Only authorized servers can use UEC commands."
+                description="This server is not authorized for EPN access. Only authorized servers can use EPN commands."
             )
             await ctx.reply(embed=embed, ephemeral=True)
             return
@@ -804,7 +804,7 @@ class UECCommands(commands.Cog):
                     return
 
                 guild_name = server_ban.get("guild_name", "Unknown Server")
-                embed = EmbedDesign.success(title="Server Unbanned", description=f"**{guild_name}** has been unbanned from UEC.")
+                embed = EmbedDesign.success(title="Server Unbanned", description=f"**{guild_name}** has been unbanned from EPN.")
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 await self.send_server_ban_notification("serverunban", guild_id_int, guild_name, reason, interaction.user)
             except Exception as e:
@@ -814,7 +814,7 @@ class UECCommands(commands.Cog):
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
     
-    @uec_group.command(name="servers", description="List all servers the bot is in")
+    @EPN_group.command(name="servers", description="List all servers the bot is in")
     @app_commands.allowed_installs(guilds=True, users=False)
     @app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     async def servers(self, ctx: commands.Context):
@@ -854,7 +854,7 @@ class UECCommands(commands.Cog):
         view = Paginator(ctx.author, embeds)
         await ctx.reply(embed=embeds[0], view=view)
     
-    @uec_group.command(name="authorize", description="Authorize a server for UEC access")
+    @EPN_group.command(name="authorize", description="Authorize a server for EPN access")
     @app_commands.allowed_installs(guilds=True, users=False)
     @app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     @app_commands.describe(
@@ -862,14 +862,14 @@ class UECCommands(commands.Cog):
         reason="Reason for authorization (optional)"
     )
     async def authorize_server(self, ctx: commands.Context, guild_id: str, *, reason: str = None):
-        """Authorize a server for UEC access."""
+        """Authorize a server for EPN access."""
         async def command_logic(interaction: discord.Interaction):
             try:
-                # Check if user is UEC developer
+                # Check if user is EPN developer
                 if not await StaffUtils.has_developer_permission_cross_guild(self.bot, interaction.user, "manage_guild"):
                     embed = EmbedDesign.error(
                         title="Permission Denied",
-                        description="You don't have permission to authorize servers. This requires UEC Developer access."
+                        description="You don't have permission to authorize servers. This requires EPN Developer access."
                     )
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
@@ -892,7 +892,7 @@ class UECCommands(commands.Cog):
                 if await self.bot.db.is_server_authorized(guild_id_int):
                     embed = EmbedDesign.warning(
                         title="Already Authorized",
-                        description=f"Server **{guild_name}** is already authorized for UEC access."
+                        description=f"Server **{guild_name}** is already authorized for EPN access."
                     )
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
@@ -902,7 +902,7 @@ class UECCommands(commands.Cog):
                 
                 embed = EmbedDesign.success(
                     title="Server Authorized",
-                    description=f"**{guild_name}** has been authorized for UEC access.",
+                    description=f"**{guild_name}** has been authorized for EPN access.",
                     fields=[
                         {"name": "Guild ID", "value": str(guild_id_int), "inline": True},
                         {"name": "Authorized by", "value": interaction.user.mention, "inline": True},
@@ -918,7 +918,7 @@ class UECCommands(commands.Cog):
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
     
-    @uec_group.command(name="deauthorize", description="Deauthorize a server from UEC access")
+    @EPN_group.command(name="deauthorize", description="Deauthorize a server from EPN access")
     @app_commands.allowed_installs(guilds=True, users=False)
     @app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     @app_commands.describe(
@@ -926,14 +926,14 @@ class UECCommands(commands.Cog):
         reason="Reason for deauthorization (optional)"
     )
     async def deauthorize_server(self, ctx: commands.Context, guild_id: str, *, reason: str = None):
-        """Deauthorize a server from UEC access."""
+        """Deauthorize a server from EPN access."""
         async def command_logic(interaction: discord.Interaction):
             try:
-                # Check if user is UEC developer
+                # Check if user is EPN developer
                 if not await StaffUtils.has_developer_permission_cross_guild(self.bot, interaction.user, "manage_guild"):
                     embed = EmbedDesign.error(
                         title="Permission Denied",
-                        description="You don't have permission to deauthorize servers. This requires UEC Developer access."
+                        description="You don't have permission to deauthorize servers. This requires EPN Developer access."
                     )
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
@@ -950,7 +950,7 @@ class UECCommands(commands.Cog):
                 if not auth_info:
                     embed = EmbedDesign.warning(
                         title="Not Authorized",
-                        description=f"Server with ID `{guild_id_int}` is not currently authorized for UEC access."
+                        description=f"Server with ID `{guild_id_int}` is not currently authorized for EPN access."
                     )
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
@@ -961,7 +961,7 @@ class UECCommands(commands.Cog):
                 if result:
                     embed = EmbedDesign.success(
                         title="Server Deauthorized",
-                        description=f"**{auth_info.get('guild_name', 'Unknown Server')}** has been deauthorized from UEC access.",
+                        description=f"**{auth_info.get('guild_name', 'Unknown Server')}** has been deauthorized from EPN access.",
                         fields=[
                             {"name": "Guild ID", "value": str(guild_id_int), "inline": True},
                             {"name": "Deauthorized by", "value": interaction.user.mention, "inline": True},
@@ -983,7 +983,7 @@ class UECCommands(commands.Cog):
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
     
-    @uec_group.command(name="authorized", description="List all authorized servers")
+    @EPN_group.command(name="authorized", description="List all authorized servers")
     @app_commands.allowed_installs(guilds=True, users=False)
     @app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     async def list_authorized_servers(self, ctx: commands.Context):
@@ -991,7 +991,7 @@ class UECCommands(commands.Cog):
         if not await StaffUtils.has_developer_permission_cross_guild(self.bot, ctx.author, "manage_guild"):
             embed = EmbedDesign.error(
                 title="Permission Denied",
-                description="You don't have permission to view authorized servers. This requires UEC Developer access."
+                description="You don't have permission to view authorized servers. This requires EPN Developer access."
             )
             await ctx.reply(embed=embed, ephemeral=True)
             return
@@ -1002,7 +1002,7 @@ class UECCommands(commands.Cog):
         if not authorized_servers:
             embed = EmbedDesign.info(
                 title="No Authorized Servers",
-                description="There are currently no authorized servers for UEC access."
+                description="There are currently no authorized servers for EPN access."
             )
             await ctx.reply(embed=embed, ephemeral=True)
             return
@@ -1048,4 +1048,4 @@ class UECCommands(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(UECCommands(bot)) 
+    await bot.add_cog(EPNCommands(bot)) 
