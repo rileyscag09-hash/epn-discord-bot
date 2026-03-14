@@ -284,7 +284,7 @@ class InfoCommands(commands.Cog):
         try:
             blacklist_record = await self.bot.db.find_blacklist(user.id, active=True)
             if blacklist_record:
-                stats_info += f"**Status:** EPN Banned\n"
+                stats_info += f"**Status:** UEC Banned\n"
         except Exception as e:
             logger.error(f"Error checking blacklist status: {e}")
         

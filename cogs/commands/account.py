@@ -630,8 +630,8 @@ class AccountManagementSelect(discord.ui.Select):
         # Generate QR code
         totp = pyotp.TOTP(secret)
         provisioning_uri = totp.provisioning_uri(
-            name=f"EPN Bot ({self.user.name})",
-            issuer_name="EPN Bot"
+            name=f"UEC Bot ({self.user.name})",
+            issuer_name="UEC Bot"
         )
         
         # Create QR code

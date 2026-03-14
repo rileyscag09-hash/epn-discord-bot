@@ -1,5 +1,5 @@
 """
-Preventative commands for EPN bot.
+Preventative commands for UEC bot.
 Handles blocking users and guilds from using the bot.
 """
 
@@ -91,8 +91,8 @@ class PreventativeCommands(commands.Cog):
         expires_at = None
         if expires:
             try:
-                from cogs.commands.EPN import EPNCommands
-                expires_at = EPNCommands.parse_duration(EPNCommands, expires)
+                from cogs.commands.uec import UECCommands
+                expires_at = UECCommands.parse_duration(UECCommands, expires)
             except ValueError as e:
                 embed = EmbedDesign.error(title="Invalid Expiry Time", description=str(e))
                 await ctx.reply(embed=embed, ephemeral=True)
