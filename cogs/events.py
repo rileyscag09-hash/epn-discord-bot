@@ -926,7 +926,7 @@ class Events(commands.Cog):
                 {"name": "Message Link", "value": f"[Jump to Message]({message.jump_url})", "inline": True},
                 {"name": "Content", "value": message.content[:1000] + "..." if len(message.content) > 1000 else message.content, "inline": False},
                 {"name": "Action Taken", "value": action_taken, "inline": True},
-                {"name": "Reported by", "value": "UEC Bot", "inline": True}
+                {"name": "Reported by", "value": "EPN Bot", "inline": True}
             ]
             
             # Add malicious URLs if found
@@ -979,7 +979,7 @@ class Events(commands.Cog):
             # Try to ban the user with detailed reason
             ban_successful = False
             try:
-                ban_reason = f"UEC Blacklist - Reason: {reason} | Blacklisted by: {blacklisted_by} | Date: {timestamp}"
+                ban_reason = f"EPN Blacklist - Reason: {reason} | Blacklisted by: {blacklisted_by} | Date: {timestamp}"
                 await member.ban(reason=ban_reason)
                 ban_successful = True
                 logger.info(f"Successfully banned blacklisted user {member.id} ({member.display_name})")
@@ -989,11 +989,11 @@ class Events(commands.Cog):
             except Exception as e:
                 logger.error(f"Error banning blacklisted user {member.id} ({member.display_name}): {e}")
             
-            # Always log the UEC ban attempt, regardless of ban success
-            await self.log_uec_ban(member, reason, blacklisted_by, ban_successful)
+            # Always log the EPN ban attempt, regardless of ban success
+            await self.log_EPN_ban(member, reason, blacklisted_by, ban_successful)
             
-            # Handle UEC ban notification for configured roles
-            await self.handle_uec_ban_notification(member, reason, blacklisted_by)
+            # Handle EPN ban notification for configured roles
+            await self.handle_EPN_ban_notification(member, reason, blacklisted_by)
         
         # Check for alt evasion using Roblox ID
         await self.check_alt_evasion(member)
@@ -1023,14 +1023,14 @@ class Events(commands.Cog):
         except Exception as e:
             logger.error(f"Error sending staff log: {e}")
 
-    async def log_uec_ban(self, member: discord.Member, reason: str, blacklisted_by: str, ban_successful: bool = True):
-        """Log UEC ban to server's log channel."""
+    async def log_EPN_ban(self, member: discord.Member, reason: str, blacklisted_by: str, ban_successful: bool = True):
+        """Log EPN ban to server's log channel."""
         status = "Banned" if ban_successful else "Ban Failed"
         color = 0xFF0000 if ban_successful else 0xFFA500  # Red for success, Orange for failure
         
         embed = EmbedDesign.error(
-            title=f"UEC Auto-Ban ({status})",
-            description=f"**{member.display_name}** was detected on UEC blacklist.",
+            title=f"EPN Auto-Ban ({status})",
+            description=f"**{member.display_name}** was detected on EPN blacklist.",
             fields=[
                 {"name": "User", "value": f"{member.mention} ({member.id})", "inline": True},
                 {"name": "Status", "value": status, "inline": True},
@@ -1086,7 +1086,7 @@ class Events(commands.Cog):
                 # Try to ban the alt account
                 ban_successful = False
                 try:
-                    ban_reason = f"[UEC] Alt Evasion - {main_user_id}"
+                    ban_reason = f"[EPN] Alt Evasion - {main_user_id}"
                     await member.ban(reason=ban_reason)
                     ban_successful = True
                     logger.info(f"Successfully banned alt evasion user {member.id} ({member.display_name})")
@@ -1107,8 +1107,8 @@ class Events(commands.Cog):
                     detection_method="roblox_id_matching"
                 )
 
-                # Handle UEC ban notification for configured roles
-                await self.handle_uec_ban_notification(member, f"Alt Evasion - {main_user_id}", blacklisted_by)
+                # Handle EPN ban notification for configured roles
+                await self.handle_EPN_ban_notification(member, f"Alt Evasion - {main_user_id}", blacklisted_by)
 
         except Exception as e:
             logger.error(f"Error checking alt evasion: {e}")
@@ -1411,8 +1411,8 @@ class Events(commands.Cog):
         except Exception as e:
             logger.error(f"Error sending ping notification: {e}")
 
-    async def handle_uec_ban_notification(self, member: discord.Member, reason: str, blacklisted_by: str):
-        """Handle UEC ban notifications for configured roles."""
+    async def handle_EPN_ban_notification(self, member: discord.Member, reason: str, blacklisted_by: str):
+        """Handle EPN ban notifications for configured roles."""
         try:
             # Get all configurations in a single optimized query
             configs = await self.bot.db.find_all_configs(member.guild.id)
@@ -1458,8 +1458,8 @@ class Events(commands.Cog):
             
             # Create notification embed
             embed = EmbedDesign.error(
-                title="Member UEC Banned",
-                description=f"**{member.display_name}** has been UEC banned.",
+                title="Member EPN Banned",
+                description=f"**{member.display_name}** has been EPN banned.",
                 fields=fields
             )
             
@@ -1470,7 +1470,7 @@ class Events(commands.Cog):
             await self.send_ping_notification(member.guild, ping_role, embed)
             
         except Exception as e:
-            logger.error(f"Error handling UEC ban notification: {e}")
+            logger.error(f"Error handling EPN ban notification: {e}")
 
     @commands.hybrid_group(name="check", description="Check commands")
     @app_commands.allowed_installs(guilds=True, users=False)
@@ -1597,7 +1597,7 @@ class Events(commands.Cog):
                                 title="Banned Server Invite Detected",
                                 description=f"Your message contained an invite to a banned server: **{invite.guild.name}**\n\n**Reason for ban:** {server_ban.get('reason', 'No reason provided')}\n\nYour message has been automatically removed."
                             )
-                            embed.set_footer(text="Appeals can be submitted to UEC staff if you believe this is an error.")
+                            embed.set_footer(text="Appeals can be submitted to EPN staff if you believe this is an error.")
                             await message.author.send(embed=embed)
                         except discord.Forbidden:
                             logger.info(f"Could not DM user {message.author} about banned server invite")
@@ -1622,8 +1622,8 @@ class Events(commands.Cog):
     async def report_banned_server_invite(self, message: discord.Message, banned_guild: discord.Guild, server_ban: dict):
         """Report a banned server invite violation to staff."""
         try:
-            # Get the notification channel (same as UEC ban notifications)
-            notification_channel_id = constants.uec_notification_channel()
+            # Get the notification channel (same as EPN ban notifications)
+            notification_channel_id = constants.EPN_notification_channel()
             if not notification_channel_id:
                 return
             
