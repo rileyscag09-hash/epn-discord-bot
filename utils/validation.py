@@ -1,5 +1,5 @@
 """
-Input validation and sanitization utilities for UEC Bot.
+Input validation and sanitization utilities for EPN Bot.
 
 This module provides decorators and functions for validating and sanitizing
 user inputs to prevent injection attacks and ensure data integrity.
