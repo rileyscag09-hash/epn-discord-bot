@@ -1,5 +1,5 @@
 """
-Blocking utility for UEC bot.
+Blocking utility for EPN bot.
 Handles blocking users and guilds from using the bot.
 """
 
@@ -111,14 +111,14 @@ class BlockingManager:
                 username = f"User {target}"
             else:
                 username = target.display_name if hasattr(target, 'display_name') else str(target)
-            description = f"Hey {username}, your access to UEC has been terminated and you are no longer authorized to interact with, manipulate or interfere with the service. Please cease use immediately."
+            description = f"Hey {username}, your access to EPN has been terminated and you are no longer authorized to interact with, manipulate or interfere with the service. Please cease use immediately."
         else:
             title = "Unauthorized (401)"
             if isinstance(target, int):
                 server_name = f"Server {target}"
             else:
                 server_name = target.name if hasattr(target, 'name') else str(target)
-            description = f"Hey {server_name}, your access to UEC has been terminated and you are no longer authorized to interact with, manipulate or interfere with the service. Please cease use immediately."
+            description = f"Hey {server_name}, your access to EPN has been terminated and you are no longer authorized to interact with, manipulate or interfere with the service. Please cease use immediately."
         
         return EmbedDesign.error(
             title=title,
