@@ -1,5 +1,5 @@
 """
-Security logging system for UEC Bot.
+Security logging system for EPN Bot.
 
 This module provides comprehensive security event logging including
 authentication failures, permission violations, and suspicious activities.
@@ -178,7 +178,7 @@ class SecurityLogger:
         """Send security alert to the designated security channel."""
         try:
             # Get security alerts channel (using the same as error channel for now)
-            security_channel_id = 1421041538041122886  # Error channel ID from UEC.py
+            security_channel_id = 1421041538041122886  # Error channel ID from EPN.py
             security_channel = self.bot.get_channel(security_channel_id)
             
             if not security_channel:
