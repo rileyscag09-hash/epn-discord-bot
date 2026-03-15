@@ -334,7 +334,7 @@ class EPNCommands(commands.Cog):
                     title="User Blacklisted",
                     description=f"**{user.display_name}** has been added to the EPN blacklist."
                 )
-                embed = EmbedDesign.dm(
+                embed = discord.Embed(
                     title="You have been blacklisted in ER:LC Partner Network",
                     description=f"Hello, **{user.display_name}**. You have been banned from EPN for {reason}"
                 )
