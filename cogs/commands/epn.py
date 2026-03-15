@@ -32,7 +32,7 @@ class EPNCommands(commands.Cog):
         )
 
     def parse_duration(self, duration_str: str) -> datetime:
-        """Parse a duration string like '1d', '2h', '30m' into a datetime."""
+        """Parse a duration string like '1d', '2h', '30m' into a datetime.."""
         duration_str = duration_str.strip().lower()
         match = re.match(r'^(\d+)([dhms])$', duration_str)
 
