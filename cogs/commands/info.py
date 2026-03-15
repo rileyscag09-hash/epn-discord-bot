@@ -23,7 +23,7 @@ class InfoCommands(commands.Cog):
         )
 
     async def get_bloxlink_info(self, user_id: int) -> Optional[dict]:
-        """Get Roblox information from Bloxlink API using global key."""
+        """Get Roblox information from Bloxlink API using global. key."""
         if not self.bloxlink_api_key:
             logger.warning("Bloxlink API key not configured")
             return None
