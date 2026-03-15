@@ -123,7 +123,7 @@ class DatabaseManager:
             CREATE TABLE IF NOT EXISTS alert_configs (
                 id SERIAL PRIMARY KEY,
                 guild_id BIGINT NOT NULL,
-                alert_channel_id BIGINT,
+                alert_role_id BIGINT,
                 created_by BIGINT NOT NULL,
                 timestamp TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 active BOOLEAN DEFAULT TRUE
@@ -326,6 +326,13 @@ class DatabaseManager:
                 ADD COLUMN IF NOT EXISTS appeal_reason TEXT
             """)
             logger.info("Added appeal_reason column to server_bans table")
+
+            # Alert config migration: switch from alert_channel_id -> alert_role_id
+            await self.database.execute("""
+                ALTER TABLE alert_configs
+                ADD COLUMN IF NOT EXISTS alert_role_id BIGINT
+            """)
+            logger.info("Ensured alert_role_id column exists on alert_configs table")
 
         except Exception as e:
             logger.error(f"Error running migrations: {e}")
@@ -544,7 +551,7 @@ class DatabaseManager:
             SELECT 'log' as config_type, log_channel_id::text as channel_id, NULL::text as role_id, id, created_by, timestamp, active
             FROM log_configs WHERE guild_id = :guild_id AND active = TRUE
             UNION ALL
-            SELECT 'alert' as config_type, alert_channel_id::text as channel_id, NULL::text as role_id, id, created_by, timestamp, active
+            SELECT 'alert' as config_type, NULL::text as channel_id, alert_role_id::text as role_id, id, created_by, timestamp, active
             FROM alert_configs WHERE guild_id = :guild_id AND active = TRUE
             UNION ALL
             SELECT 'ping' as config_type, NULL::text as channel_id, ping_role_id::text as role_id, id, created_by, timestamp, active
@@ -576,7 +583,7 @@ class DatabaseManager:
                 configs["alert_config"] = {
                     "id": row_dict["id"],
                     "guild_id": guild_id,
-                    "channel_id": int(row_dict["channel_id"]) if row_dict["channel_id"] else None,
+                    "role_id": int(row_dict["role_id"]) if row_dict["role_id"] else None,
                     "created_by": row_dict["created_by"],
                     "timestamp": row_dict["timestamp"],
                     "active": row_dict["active"]
@@ -593,6 +600,98 @@ class DatabaseManager:
 
         await self._set_cache(str(guild_id), "configs", configs)
         return configs
+
+    async def insert_log_config(self, guild_id: int, log_channel_id: int, created_by: int) -> int:
+        """Insert a new log configuration."""
+        query = """
+            INSERT INTO log_configs (guild_id, log_channel_id, created_by) 
+            VALUES (:guild_id, :log_channel_id, :created_by) 
+            RETURNING id
+        """
+        result = await self.database.fetch_val(query=query, values={
+            "guild_id": guild_id,
+            "log_channel_id": log_channel_id,
+            "created_by": created_by
+        })
+        await self._invalidate_cache(str(guild_id), "configs")
+        return result
+
+    async def insert_alert_config(self, guild_id: int, alert_role_id: int, created_by: int) -> int:
+        """Insert a new alert role configuration."""
+        query = """
+            INSERT INTO alert_configs (guild_id, alert_role_id, created_by) 
+            VALUES (:guild_id, :alert_role_id, :created_by) 
+            RETURNING id
+        """
+        result = await self.database.fetch_val(query=query, values={
+            "guild_id": guild_id,
+            "alert_role_id": alert_role_id,
+            "created_by": created_by
+        })
+        await self._invalidate_cache(str(guild_id), "configs")
+        return result
+
+    async def insert_ping_config(self, guild_id: int, ping_role_id: int, created_by: int) -> int:
+        """Insert a new ping configuration."""
+        query = """
+            INSERT INTO ping_configs (guild_id, ping_role_id, created_by) 
+            VALUES (:guild_id, :ping_role_id, :created_by) 
+            RETURNING id
+        """
+        result = await self.database.fetch_val(query=query, values={
+            "guild_id": guild_id,
+            "ping_role_id": ping_role_id,
+            "created_by": created_by
+        })
+        await self._invalidate_cache(str(guild_id), "configs")
+        return result
+
+    async def clear_log_configs(self, guild_id: int) -> bool:
+        """Clear active log configs for a guild."""
+        query = """
+            UPDATE log_configs
+            SET active = FALSE
+            WHERE guild_id = :guild_id AND active = TRUE
+        """
+        await self.database.execute(query=query, values={"guild_id": guild_id})
+        await self._invalidate_cache(str(guild_id), "configs")
+        return True
+
+    async def clear_alert_configs(self, guild_id: int) -> bool:
+        """Clear active alert configs for a guild."""
+        query = """
+            UPDATE alert_configs
+            SET active = FALSE
+            WHERE guild_id = :guild_id AND active = TRUE
+        """
+        await self.database.execute(query=query, values={"guild_id": guild_id})
+        await self._invalidate_cache(str(guild_id), "configs")
+        return True
+
+    async def clear_ping_configs(self, guild_id: int) -> bool:
+        """Clear active ping configs for a guild."""
+        query = """
+            UPDATE ping_configs
+            SET active = FALSE
+            WHERE guild_id = :guild_id AND active = TRUE
+        """
+        await self.database.execute(query=query, values={"guild_id": guild_id})
+        await self._invalidate_cache(str(guild_id), "configs")
+        return True
+
+    async def clear_all_configs(self, guild_id: int, cleared_by: int) -> bool:
+        """Clear all configurations for a guild."""
+        queries = [
+            "UPDATE log_configs SET active = FALSE WHERE guild_id = :guild_id AND active = TRUE",
+            "UPDATE ping_configs SET active = FALSE WHERE guild_id = :guild_id AND active = TRUE",
+            "UPDATE alert_configs SET active = FALSE WHERE guild_id = :guild_id AND active = TRUE"
+        ]
+
+        for query in queries:
+            await self.database.execute(query=query, values={"guild_id": guild_id})
+
+        await self._invalidate_cache(str(guild_id), "configs")
+        return True
 
     # Tags operations
     async def find_tag(self, guild_id: int, name: str) -> Optional[Dict[str, Any]]:
@@ -647,46 +746,6 @@ class DatabaseManager:
         })
         return result is not None and result > 0
 
-    async def clear_all_configs(self, guild_id: int, cleared_by: int) -> bool:
-        """Clear all configurations for a guild."""
-        queries = [
-            "UPDATE log_configs SET active = FALSE WHERE guild_id = :guild_id AND active = TRUE",
-            "UPDATE ping_configs SET active = FALSE WHERE guild_id = :guild_id AND active = TRUE",
-            "UPDATE alert_configs SET active = FALSE WHERE guild_id = :guild_id AND active = TRUE"
-        ]
-
-        for query in queries:
-            await self.database.execute(query=query, values={"guild_id": guild_id})
-
-        await self._invalidate_cache(str(guild_id), "configs")
-        return True
-
-    async def insert_alert_config(self, guild_id: int, alert_channel_id: int, created_by: int) -> int:
-        """Insert a new alert configuration."""
-        query = """
-            INSERT INTO alert_configs (guild_id, alert_channel_id, created_by) 
-            VALUES (:guild_id, :alert_channel_id, :created_by) 
-            RETURNING id
-        """
-        return await self.database.fetch_val(query=query, values={
-            "guild_id": guild_id,
-            "alert_channel_id": alert_channel_id,
-            "created_by": created_by
-        })
-
-    async def insert_ping_config(self, guild_id: int, ping_role_id: int, created_by: int) -> int:
-        """Insert a new ping configuration."""
-        query = """
-            INSERT INTO ping_configs (guild_id, ping_role_id, created_by) 
-            VALUES (:guild_id, :ping_role_id, :created_by) 
-            RETURNING id
-        """
-        return await self.database.fetch_val(query=query, values={
-            "guild_id": guild_id,
-            "ping_role_id": ping_role_id,
-            "created_by": created_by
-        })
-
     async def remove_ignore_by_target(self, guild_id: int, target_id: int) -> int:
         """Remove ignore record by target ID and return the number of rows affected."""
         query = """
@@ -731,438 +790,4 @@ class DatabaseManager:
         return [dict(row) for row in rows]
 
     async def find_expired_server_bans(self) -> List[Dict[str, Any]]:
-        """Find all active server ban records that have expired."""
-        query = """
-            SELECT * FROM server_bans 
-            WHERE active = TRUE AND expires_at IS NOT NULL AND expires_at <= CURRENT_TIMESTAMP
-        """
-        rows = await self.database.fetch_all(query=query)
-        return [dict(row) for row in rows]
-
-    async def deactivate_server_ban(self, guild_id: int, removed_by: int, appeal_reason: str = None) -> bool:
-        """Deactivate a server ban record."""
-        check_query = "SELECT id, active, guild_id FROM server_bans WHERE guild_id = :guild_id ORDER BY timestamp DESC LIMIT 1"
-        existing = await self.database.fetch_one(query=check_query, values={"guild_id": guild_id})
-        logger.info(f"Before deactivate - existing record for guild {guild_id}: {dict(existing) if existing else None}")
-
-        query = """
-            UPDATE server_bans 
-            SET active = FALSE, updated_by = :removed_by, updated_at = CURRENT_TIMESTAMP, appeal_reason = :appeal_reason
-            WHERE guild_id = :guild_id AND active = TRUE
-            RETURNING id, guild_id, active
-        """
-
-        try:
-            updated_record = await self.database.fetch_one(query=query, values={
-                "guild_id": guild_id,
-                "removed_by": removed_by,
-                "appeal_reason": appeal_reason
-            })
-
-            if updated_record:
-                logger.info(f"Successfully updated server ban record: {dict(updated_record)}")
-                return True
-            else:
-                logger.warning(f"No rows updated for guild {guild_id} - either no active record exists or race condition occurred")
-
-                after = await self.database.fetch_one(query=check_query, values={"guild_id": guild_id})
-                logger.info(f"After failed update - record for guild {guild_id}: {dict(after) if after else None}")
-
-                if after and not after['active']:
-                    logger.info(f"Record for guild {guild_id} is now inactive - considering operation successful")
-                    return True
-
-                return False
-
-        except Exception as e:
-            logger.error(f"Exception in deactivate_server_ban for guild {guild_id}: {e}")
-            return False
-
-    async def expire_server_ban(self, server_ban_id: int) -> bool:
-        """Mark a server ban as expired/inactive."""
-        query = """
-            UPDATE server_bans 
-            SET active = FALSE, updated_by = 0, updated_at = CURRENT_TIMESTAMP
-            WHERE id = :id AND active = TRUE
-        """
-        result = await self.database.execute(query=query, values={"id": server_ban_id})
-        return result is not None and result > 0
-
-    async def update_blacklist_reason(self, user_id: int, reason: str, updated_by: int) -> bool:
-        """Update blacklist reason for a user."""
-        logger.info(f"Database - update_blacklist_reason called for user_id={user_id}, reason='{reason}', updated_by={updated_by}")
-
-        query = """
-            UPDATE blacklist 
-            SET reason = :reason, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
-            WHERE user_id = :user_id AND active = TRUE
-        """
-
-        logger.info(f"Database - Executing update query: {query}")
-        logger.info(f"Database - Update values: user_id={user_id}, reason='{reason}', updated_by={updated_by}")
-
-        try:
-            result = await self.database.execute(query=query, values={
-                "user_id": user_id,
-                "reason": reason,
-                "updated_by": updated_by
-            })
-
-            logger.info(f"Database - Raw execute result: {result} (type: {type(result)})")
-            success = True
-            logger.info(f"Database - update_blacklist_reason result: {success} (rows affected: {result})")
-
-            await self._invalidate_cache(str(user_id), "blacklist")
-            return success
-
-        except Exception as e:
-            logger.error(f"Database - Error in update_blacklist_reason for user {user_id}: {e}")
-            logger.error(f"Database - Exception type: {type(e)}")
-            import traceback
-            logger.error(f"Database - Traceback: {traceback.format_exc()}")
-            return False
-
-    async def update_blacklist_full(self, user_id: int, updated_by: int, **updates) -> bool:
-        """Update multiple blacklist fields for a user."""
-        if not updates:
-            return False
-
-        set_clauses = []
-        values = {"user_id": user_id, "updated_by": updated_by}
-
-        for field, value in updates.items():
-            if field in ['reason', 'evidence', 'expires_at', 'appeal_allowed']:
-                set_clauses.append(f"{field} = :{field}")
-                values[field] = self.normalize_datetime(value) if field == 'expires_at' and value else value
-
-        if not set_clauses:
-            return False
-
-        set_clauses.append("updated_by = :updated_by")
-        set_clauses.append("updated_at = CURRENT_TIMESTAMP")
-
-        query = f"""
-            UPDATE blacklist 
-            SET {', '.join(set_clauses)}
-            WHERE user_id = :user_id AND active = TRUE
-        """
-
-        logger.info(f"Database - Executing full update query: {query}")
-        logger.info(f"Database - Update values: {values}")
-
-        try:
-            result = await self.database.execute(query=query, values=values)
-            success = True
-            logger.info(f"Database - update_blacklist_full result: {success} (rows affected: {result})")
-
-            await self._invalidate_cache(str(user_id), "blacklist")
-            return success
-
-        except Exception as e:
-            logger.error(f"Database - Error in update_blacklist_full for user {user_id}: {e}")
-            return False
-
-    async def deactivate_blacklist(self, user_id: int, removed_by: int, appeal_reason: str = None) -> bool:
-        """Deactivate a blacklist record."""
-        query = """
-            UPDATE blacklist 
-            SET active = FALSE, updated_by = :removed_by, updated_at = CURRENT_TIMESTAMP, appeal_reason = :appeal_reason
-            WHERE user_id = :user_id AND active = TRUE
-        """
-        result = await self.database.execute(query=query, values={
-            "user_id": user_id,
-            "removed_by": removed_by,
-            "appeal_reason": appeal_reason
-        })
-
-        await self._invalidate_cache(str(user_id), "blacklist")
-        return result is not None and result > 0
-
-    # Verification operations
-    async def create_verification_session(self, user_id: int, session_id: str, verification_type: str, phone_number: str = None, verification_code: str = None, expires_at: datetime = None) -> int:
-        """Create a new verification session."""
-        if expires_at is None:
-            expires_at = datetime.utcnow() + timedelta(minutes=10)
-
-        query = """
-            INSERT INTO verification_sessions (
-                user_id, session_id, verification_type, phone_number, verification_code, expires_at
-            ) VALUES (
-                :user_id, :session_id, :verification_type, :phone_number, :verification_code, :expires_at
-            ) RETURNING id
-        """
-        return await self.database.fetch_val(query=query, values={
-            "user_id": user_id,
-            "session_id": session_id,
-            "verification_type": verification_type,
-            "phone_number": phone_number,
-            "verification_code": verification_code,
-            "expires_at": self.normalize_datetime(expires_at)
-        })
-
-    async def find_verification_session(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Find a verification session by session ID."""
-        query = """
-            SELECT * FROM verification_sessions 
-            WHERE session_id = :session_id AND expires_at > CURRENT_TIMESTAMP
-        """
-        row = await self.database.fetch_one(query=query, values={"session_id": session_id})
-        return dict(row) if row else None
-
-    async def verify_session(self, session_id: str) -> bool:
-        """Mark a verification session as verified."""
-        query = """
-            UPDATE verification_sessions 
-            SET verified = TRUE, verified_at = CURRENT_TIMESTAMP
-            WHERE session_id = :session_id AND expires_at > CURRENT_TIMESTAMP
-        """
-        result = await self.database.execute(query=query, values={"session_id": session_id})
-        return result is not None and result > 0
-
-    async def cleanup_expired_sessions(self) -> int:
-        """Clean up expired verification sessions."""
-        query = "DELETE FROM verification_sessions WHERE expires_at <= CURRENT_TIMESTAMP"
-        result = await self.database.execute(query=query)
-        return result or 0
-
-    async def store_user_phone_number(self, user_id: int, phone_number: str) -> int:
-        """Store or update a user's phone number."""
-        query = """
-            INSERT INTO user_phone_numbers (user_id, phone_number, verified)
-            VALUES (:user_id, :phone_number, TRUE)
-            ON CONFLICT (user_id) 
-            DO UPDATE SET 
-                phone_number = EXCLUDED.phone_number,
-                verified = TRUE,
-                verified_at = CURRENT_TIMESTAMP
-            RETURNING id
-        """
-        return await self.database.fetch_val(query=query, values={
-            "user_id": user_id,
-            "phone_number": phone_number
-        })
-
-    async def get_user_phone_number(self, user_id: int) -> Optional[str]:
-        """Get a user's verified phone number."""
-        query = """
-            SELECT phone_number FROM user_phone_numbers 
-            WHERE user_id = :user_id AND verified = TRUE
-        """
-        result = await self.database.fetch_val(query=query, values={"user_id": user_id})
-        return result
-
-    # 2FA Backup codes operations
-    async def store_2fa_backup_codes(self, user_id: int, backup_codes: str) -> int:
-        """Store 2FA backup codes for a user."""
-        query = """
-            INSERT INTO user_2fa_backup (user_id, backup_codes)
-            VALUES (:user_id, :backup_codes)
-            ON CONFLICT (user_id) 
-            DO UPDATE SET 
-                backup_codes = EXCLUDED.backup_codes,
-                created_at = CURRENT_TIMESTAMP
-            RETURNING id
-        """
-        return await self.database.fetch_val(query=query, values={
-            "user_id": user_id,
-            "backup_codes": backup_codes
-        })
-
-    async def get_2fa_backup_codes(self, user_id: int) -> Optional[str]:
-        """Get 2FA backup codes for a user."""
-        query = """
-            SELECT backup_codes FROM user_2fa_backup 
-            WHERE user_id = :user_id
-        """
-        result = await self.database.fetch_val(query=query, values={"user_id": user_id})
-        return result
-
-    async def remove_2fa_backup_codes(self, user_id: int) -> bool:
-        """Remove 2FA backup codes for a user."""
-        query = "DELETE FROM user_2fa_backup WHERE user_id = :user_id"
-        result = await self.database.execute(query=query, values={"user_id": user_id})
-        return result is not None and result > 0
-
-    # Authorized servers operations
-    async def authorize_server(self, guild_id: int, guild_name: str, authorized_by: int, reason: str = None) -> int:
-        """Authorize a server for EPN access."""
-        query = """
-            INSERT INTO authorized_servers (guild_id, guild_name, authorized_by, reason) 
-            VALUES (:guild_id, :guild_name, :authorized_by, :reason) 
-            ON CONFLICT (guild_id) 
-            DO UPDATE SET 
-                guild_name = EXCLUDED.guild_name,
-                authorized_by = EXCLUDED.authorized_by,
-                authorized_at = CURRENT_TIMESTAMP,
-                reason = EXCLUDED.reason,
-                active = TRUE
-            RETURNING id
-        """
-        return await self.database.fetch_val(query=query, values={
-            "guild_id": guild_id,
-            "guild_name": guild_name,
-            "authorized_by": authorized_by,
-            "reason": reason
-        })
-
-    async def deauthorize_server(self, guild_id: int, deauthorized_by: int, reason: str = None) -> bool:
-        """Deauthorize a server from EPN access."""
-        query = """
-            UPDATE authorized_servers 
-            SET active = FALSE, authorized_by = :deauthorized_by, authorized_at = CURRENT_TIMESTAMP, reason = :reason
-            WHERE guild_id = :guild_id AND active = TRUE
-        """
-        result = await self.database.execute(query=query, values={
-            "guild_id": guild_id,
-            "deauthorized_by": deauthorized_by,
-            "reason": reason
-        })
-        return result is not None and result > 0
-
-    async def is_server_authorized(self, guild_id: int) -> bool:
-        """Check if a server is authorized for EPN access."""
-        query = "SELECT 1 FROM authorized_servers WHERE guild_id = :guild_id AND active = TRUE LIMIT 1"
-        result = await self.database.fetch_one(query=query, values={"guild_id": guild_id})
-        return result is not None
-
-    async def get_authorized_servers(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """Get all authorized servers."""
-        query = """
-            SELECT * FROM authorized_servers 
-            WHERE active = TRUE 
-            ORDER BY authorized_at DESC 
-            LIMIT :limit
-        """
-        rows = await self.database.fetch_all(query=query, values={"limit": limit})
-        return [dict(row) for row in rows]
-
-    async def get_server_authorization(self, guild_id: int) -> Optional[Dict[str, Any]]:
-        """Get server authorization details."""
-        query = """
-            SELECT * FROM authorized_servers 
-            WHERE guild_id = :guild_id AND active = TRUE 
-            ORDER BY authorized_at DESC 
-            LIMIT 1
-        """
-        row = await self.database.fetch_one(query=query, values={"guild_id": guild_id})
-        return dict(row) if row else None
-
-    # User blocking operations
-    async def insert_user_block(self, user_id: int, reason: str, evidence: str = "",
-                               blocked_by: int = None, expires_at: datetime = None,
-                               appeal_allowed: bool = True) -> int:
-        """Insert a new user block record."""
-        query = """
-            INSERT INTO user_blocks (user_id, reason, evidence, blocked_by, expires_at, appeal_allowed) 
-            VALUES (:user_id, :reason, :evidence, :blocked_by, :expires_at, :appeal_allowed) 
-            RETURNING id
-        """
-        result = await self.database.fetch_val(query=query, values={
-            "user_id": user_id,
-            "reason": reason,
-            "evidence": evidence or "",
-            "blocked_by": blocked_by,
-            "expires_at": self.normalize_datetime(expires_at) if expires_at else None,
-            "appeal_allowed": appeal_allowed
-        })
-        return result
-
-    async def find_user_block(self, user_id: int, active: bool = True) -> Optional[Dict[str, Any]]:
-        """Find a user block record by user ID."""
-        query = "SELECT * FROM user_blocks WHERE user_id = :user_id AND active = :active ORDER BY timestamp DESC LIMIT 1"
-        row = await self.database.fetch_one(query=query, values={"user_id": user_id, "active": active})
-        return dict(row) if row else None
-
-    async def deactivate_user_block(self, user_id: int, unblocked_by: int, unblock_reason: str = None) -> bool:
-        """Deactivate a user block record."""
-        query = """
-            UPDATE user_blocks 
-            SET active = FALSE, updated_by = :unblocked_by, updated_at = CURRENT_TIMESTAMP, unblock_reason = :unblock_reason
-            WHERE user_id = :user_id AND active = TRUE
-        """
-        result = await self.database.execute(query=query, values={
-            "user_id": user_id,
-            "unblocked_by": unblocked_by,
-            "unblock_reason": unblock_reason
-        })
-        return result is not None and result > 0
-
-    async def get_all_user_blocks(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """Get all active user blocks."""
-        if limit > 100:
-            try:
-                from utils.security_logger import get_security_logger, SecurityEventType, SecurityEventSeverity
-                security_logger = get_security_logger(None)
-                await security_logger.log_event(
-                    SecurityEventType.DATA_BREACH_ATTEMPT,
-                    SecurityEventSeverity.HIGH,
-                    details={
-                        "operation": "get_all_user_blocks",
-                        "requested_limit": limit,
-                        "breach_indicator": "mass_user_data_extraction_attempt"
-                    },
-                    action_taken="Request allowed but logged for investigation"
-                )
-            except Exception:
-                pass
-
-        query = """
-            SELECT * FROM user_blocks 
-            WHERE active = TRUE 
-            ORDER BY timestamp DESC 
-            LIMIT :limit
-        """
-        rows = await self.database.fetch_all(query=query, values={"limit": limit})
-        return [dict(row) for row in rows]
-
-    # Guild blocking operations
-    async def insert_guild_block(self, guild_id: int, guild_name: str, reason: str, evidence: str = "",
-                                blocked_by: int = None, expires_at: datetime = None,
-                                appeal_allowed: bool = True) -> int:
-        """Insert a new guild block record."""
-        query = """
-            INSERT INTO guild_blocks (guild_id, guild_name, reason, evidence, blocked_by, expires_at, appeal_allowed) 
-            VALUES (:guild_id, :guild_name, :reason, :evidence, :blocked_by, :expires_at, :appeal_allowed) 
-            RETURNING id
-        """
-        result = await self.database.fetch_val(query=query, values={
-            "guild_id": guild_id,
-            "guild_name": guild_name,
-            "reason": reason,
-            "evidence": evidence or "",
-            "blocked_by": blocked_by,
-            "expires_at": self.normalize_datetime(expires_at) if expires_at else None,
-            "appeal_allowed": appeal_allowed
-        })
-        return result
-
-    async def find_guild_block(self, guild_id: int, active: bool = True) -> Optional[Dict[str, Any]]:
-        """Find a guild block record by guild ID."""
-        query = "SELECT * FROM guild_blocks WHERE guild_id = :guild_id AND active = :active ORDER BY timestamp DESC LIMIT 1"
-        row = await self.database.fetch_one(query=query, values={"guild_id": guild_id, "active": active})
-        return dict(row) if row else None
-
-    async def deactivate_guild_block(self, guild_id: int, unblocked_by: int, unblock_reason: str = None) -> bool:
-        """Deactivate a guild block record."""
-        query = """
-            UPDATE guild_blocks 
-            SET active = FALSE, updated_by = :unblocked_by, updated_at = CURRENT_TIMESTAMP, unblock_reason = :unblock_reason
-            WHERE guild_id = :guild_id AND active = TRUE
-        """
-        result = await self.database.execute(query=query, values={
-            "guild_id": guild_id,
-            "unblocked_by": unblocked_by,
-            "unblock_reason": unblock_reason
-        })
-        return result is not None and result > 0
-
-    async def get_all_guild_blocks(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """Get all active guild blocks."""
-        query = """
-            SELECT * FROM guild_blocks 
-            WHERE active = TRUE 
-            ORDER BY timestamp DESC 
-            LIMIT :limit
-        """
-        rows = await self.database.fetch_all(query=query, values={"limit": limit})
-        return [dict(row) for row in rows]
+       
