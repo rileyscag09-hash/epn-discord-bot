@@ -336,7 +336,7 @@ class EPNCommands(commands.Cog):
                 )
                 embed1 = EmbedDesign.create_embed(
                     title="You have been blacklisted in ER:LC Partner Network",
-                    description=f"Hello, **{user.display_name}**. You have been banned from EPN for {reason}"
+                    description=f"Hello, **{user.display_name}**. You have been banned from EPN for {reason}.\n\n Appeal at: https://discord.gg/SKVuBHWKCP"
                 )
                 await interaction.followup.send(embed=embed)
                 await user.send(embed=embed1)
@@ -435,7 +435,12 @@ class EPNCommands(commands.Cog):
                     title="User Unbanned",
                     description=f"{user.mention} was unbanned by {interaction.user.mention}."
                 )
+                embed1 = EmbedDesign.create_embed(
+                    title="You have been unblacklisted in ER:LC Partner Network",
+                    description=f"Hello, **{user.display_name}**. You have been unbanned from EPN for {reason}.\n\n You may rejoin our servers at: https://discord.gg/SKVuBHWKCP"
+                )
                 await interaction.followup.send(embed=embed)
+                await user.send(embed=embed1)
                 await self.send_ban_notification("unban", user, reason, interaction.user, "Cross-Guild Unban")
 
             except Exception as e:
