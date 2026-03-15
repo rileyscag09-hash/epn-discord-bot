@@ -334,7 +334,10 @@ class EPNCommands(commands.Cog):
                     title="User Blacklisted",
                     description=f"**{user.display_name}** has been added to the EPN blacklist."
                 )
-
+                embed = EmbedDesign.create_embed(
+                    title="You have been blacklisted in ER:LC Partner Network",
+                    description=f"Hello, **{user.display_name}**. You have been banned from EPN for {reason}"
+                )
                 await interaction.followup.send(embed=embed)
                 await user.send(embed=embed)
                 await self.send_ban_notification("ban", user, reason, interaction.user, "Cross-Guild Ban", evidence, expires_at, appealable)
