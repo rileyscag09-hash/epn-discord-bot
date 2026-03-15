@@ -703,24 +703,57 @@ class DatabaseManager:
             await self.database.execute(query=query, values={"guild_id": guild_id})
         return True
     
-    async def deactivate_log_configs(self, guild_id: int) -> bool:
-        """Deactivate existing log configurations for a guild."""
-        query = "UPDATE log_configs SET active = FALSE WHERE guild_id = :guild_id AND active = TRUE"
-        result = await self.database.execute(query=query, values={"guild_id": guild_id})
-        return result is not None and result > 0
-    
-    async def insert_log_config(self, guild_id: int, log_channel_id: int, created_by: int) -> int:
-        """Insert a new log configuration."""
-        query = """
-            INSERT INTO log_configs (guild_id, log_channel_id, created_by) 
-            VALUES (:guild_id, :log_channel_id, :created_by) 
-            RETURNING id
+async def deactivate_blacklist(self, user_id: int, removed_by: int, appeal_reason: str = None) -> bool:
+    """Deactivate a blacklist record."""
+
+    try:
+        # Check if an active blacklist entry exists first
+        check_query = """
+            SELECT id FROM blacklist
+            WHERE user_id = :user_id AND active = TRUE
+            ORDER BY timestamp DESC
+            LIMIT 1
         """
-        result = await self.database.fetch_val(query=query, values={
-            "guild_id": guild_id,
-            "log_channel_id": log_channel_id,
-            "created_by": created_by
-        })
+
+        record = await self.database.fetch_one(
+            query=check_query,
+            values={"user_id": user_id}
+        )
+
+        if not record:
+            logger.warning(f"No active blacklist record found for user {user_id}")
+            return False
+
+        # Deactivate the blacklist entry
+        update_query = """
+            UPDATE blacklist
+            SET
+                active = FALSE,
+                updated_by = :removed_by,
+                updated_at = CURRENT_TIMESTAMP,
+                appeal_reason = :appeal_reason
+            WHERE user_id = :user_id AND active = TRUE
+        """
+
+        await self.database.execute(
+            query=update_query,
+            values={
+                "user_id": user_id,
+                "removed_by": removed_by,
+                "appeal_reason": appeal_reason
+            }
+        )
+
+        # Clear cache
+        await self._invalidate_cache(str(user_id), "blacklist")
+
+        logger.info(f"Blacklist entry for user {user_id} deactivated by {removed_by}")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error deactivating blacklist for user {user_id}: {e}")
+        return False
         
         # Invalidate config cache since configuration changed
         await self._invalidate_cache(str(guild_id), "configs")
