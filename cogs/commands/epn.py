@@ -175,7 +175,6 @@ class EPNCommands(commands.Cog):
             )
 
             embed.add_field(name="Reason", value=reason or "No reason provided", inline=False)
-            
 
             if evidence:
                 embed.add_field(name="Evidence", value=evidence[:1024], inline=False)
@@ -194,10 +193,6 @@ class EPNCommands(commands.Cog):
                     name="Appeals",
                     value="Allowed" if appealable else "Not allowed",
                     inline=True
-                )
-                embed.add_field(
-                    name="Server that ran commmand:",
-                    value=f"{interaction.guild.name} ~ {interaction.guild.id}"
                 )
 
             if error_text:
@@ -235,7 +230,7 @@ class EPNCommands(commands.Cog):
             description_parts = [
                 f"{user.mention} ({user.id}) was {action.lower()} in {guild_name or 'EPN'} by {staff_member.mention}"
             ]
-            description_parts.append(f"**Reason:** {reason}\n\n Command sent from: {interaction.guild.name} ¬ {interaction.guild.id} by {interaction.user.mention}")
+            description_parts.append(f"**Reason:** {reason}")
 
             if evidence:
                 description_parts.append(f"**Evidence:** {evidence}")
@@ -291,7 +286,7 @@ class EPNCommands(commands.Cog):
             )
 
             description_parts = [f"Server **{guild_name}** (`{guild_id}`) was {action.lower()} by {staff_member.mention}"]
-            description_parts.append(f"**Reason:** {reason}\n\n Command sent from: {interaction.guild.name} ¬ {interaction.guild.id} by {interaction.user.mention}")
+            description_parts.append(f"**Reason:** {reason}")
 
             if evidence:
                 description_parts.append(f"**Evidence:** {evidence}")
@@ -334,8 +329,8 @@ class EPNCommands(commands.Cog):
                 title="EPN Commands",
                 description="Available EPN moderation commands:",
                 fields=[
-                    {"name": "ban", "value": "Ban a user across all guilds", "inline": True},
-                    {"name": "unban", "value": "Unban a user across all guilds", "inline": True},
+                    {"name": "ban", "value": "Ban a user across all authorized guilds", "inline": True},
+                    {"name": "unban", "value": "Unban a user across all authorized guilds", "inline": True},
                     {"name": "serverban", "value": "Ban a server from EPN", "inline": True},
                     {"name": "serverunban", "value": "Unban a server from EPN", "inline": True},
                     {"name": "history", "value": "View ban history for a user", "inline": True},
@@ -441,6 +436,7 @@ class EPNCommands(commands.Cog):
 
                 authorized_servers = await self.bot.db.get_authorized_servers(limit=500)
                 authorized_ids = {int(server["guild_id"]) for server in authorized_servers if server.get("guild_id")}
+                logger.info(f"Authorized guild IDs for ban: {sorted(authorized_ids)}")
 
                 banned_guilds = []
                 failed_guilds = []
@@ -571,6 +567,7 @@ class EPNCommands(commands.Cog):
             try:
                 authorized_servers = await self.bot.db.get_authorized_servers(limit=500)
                 authorized_ids = {int(server["guild_id"]) for server in authorized_servers if server.get("guild_id")}
+                logger.info(f"Authorized guild IDs for unban: {sorted(authorized_ids)}")
 
                 unbanned_guilds = []
                 failed_guilds = []
