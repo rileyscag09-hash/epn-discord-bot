@@ -90,7 +90,7 @@ class EPNCommands(commands.Cog):
         return True, None
 
     async def _safe_dm_user(self, user: Union[discord.User, discord.Member], embed: discord.Embed):
-        """Try to DM a user without breaking the command if DMs are closed."""
+        """Try to DM a user without crashing the command if DMs are closed."""
         try:
             await user.send(embed=embed)
         except discord.Forbidden:
@@ -99,20 +99,32 @@ class EPNCommands(commands.Cog):
             logger.error(f"Error sending DM to user {user.id}: {e}")
 
     async def send_staff_log(self, guild: discord.Guild, embed: discord.Embed) -> bool:
-        """
-        Send a log embed to the configured log channel for this guild.
-
-        This reuses the Events cog helper so the exact same log-channel config
-        path is used everywhere in the bot.
-        """
+        """Send a log embed to the configured log channel for this guild."""
         try:
-            events_cog = self.bot.get_cog("Events")
-            if not events_cog:
-                logger.error("Events cog not found")
-                return False
+            log_config = await self.bot.db.find_log_config(guild.id)
+            logger.info(f"log_config for guild {guild.id}: {log_config}")
 
-            await events_cog.send_staff_log(guild, embed)
-            return True
+            if log_config:
+                channel_id = (
+                    log_config.get("channel_id")
+                    or log_config.get("log_channel_id")
+                    or log_config.get("channel")
+                )
+
+                if not channel_id:
+                    logger.error(f"Log config missing channel field: {log_config}")
+                    return False
+
+                channel = guild.get_channel(int(channel_id))
+                if channel and isinstance(channel, discord.TextChannel):
+                    await channel.send(embed=embed)
+                    return True
+                else:
+                    logger.error(f"Configured log channel {channel_id} not found in guild {guild.id}")
+                    return False
+
+            logger.warning(f"No log config found for guild {guild.id}")
+            return False
 
         except Exception as e:
             logger.error(f"Error sending staff log for guild {guild.id}: {e}")
@@ -467,7 +479,7 @@ class EPNCommands(commands.Cog):
 
                 embed = EmbedDesign.success(
                     title="User Blacklisted",
-                    description=f"**{user.display_name}** has been added to the EPN blacklist.\n\nThis ban came from: {interaction.guild.name}"
+                    description=f"**{user.display_name}** has been added to the EPN blacklist."
                 )
                 embed.add_field(name="Successful Guilds", value=str(len(banned_guilds)), inline=True)
                 embed.add_field(name="Failed Guilds", value=str(len(failed_guilds)), inline=True)
@@ -627,7 +639,7 @@ class EPNCommands(commands.Cog):
 
                 embed = EmbedDesign.success(
                     title="User Unbanned",
-                    description=f"{user.mention} was unbanned by {interaction.user.mention}.\n\nThis unban came from: {interaction.guild.name}"
+                    description=f"{user.mention} was unbanned by {interaction.user.mention}."
                 )
                 embed.add_field(name="Successful Guilds", value=str(len(unbanned_guilds)), inline=True)
                 embed.add_field(name="Failed Guilds", value=str(len(failed_guilds)), inline=True)
