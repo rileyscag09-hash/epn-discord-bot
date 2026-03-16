@@ -21,7 +21,6 @@ class EPNCommands(commands.Cog):
         self.bot = bot
         self.security_logger = get_security_logger(bot)
 
-        # Rate limiter for non-staff users (3 commands per hour)
         self.admin_rate_limiter = UserCommandRateLimiter(
             max_requests=3,
             time_window=3600,
@@ -55,7 +54,6 @@ class EPNCommands(commands.Cog):
         return datetime.utcnow() + timedelta(seconds=seconds)
 
     async def check_admin_rate_limit(self, user_id: int) -> tuple[bool, Optional[str]]:
-        """Check if a non-staff user has exceeded their rate limit."""
         can_proceed = await self.admin_rate_limiter.can_make_request(user_id)
 
         if not can_proceed:
@@ -85,7 +83,6 @@ class EPNCommands(commands.Cog):
         return True, None
 
     async def _safe_dm_user(self, user: Union[discord.User, discord.Member], embed: discord.Embed):
-        """Try to DM a user without crashing the command if DMs are closed."""
         try:
             await user.send(embed=embed)
         except discord.Forbidden:
@@ -211,13 +208,13 @@ class EPNCommands(commands.Cog):
         action: str,
         user: Union[discord.User, discord.Member],
         reason: str,
-        staff_member: discord.Member,
+        staff_member: Union[discord.User, discord.Member],
         guild_name: Optional[str] = None,
         evidence: Optional[str] = None,
         expires_at: Optional[datetime] = None,
         appealable: bool = True
     ):
-        """Send ban notification to the specified central notification channel."""
+        """Send central EPN notification."""
         try:
             notification_channel = self.bot.get_channel(constants.EPN_user_notification_channel_id())
             if not notification_channel:
@@ -270,12 +267,12 @@ class EPNCommands(commands.Cog):
         guild_id: int,
         guild_name: str,
         reason: str,
-        staff_member: discord.Member,
+        staff_member: Union[discord.User, discord.Member],
         evidence: Optional[str] = None,
         expires_at: Optional[datetime] = None,
         appealable: bool = True
     ):
-        """Send server ban notification to the specified central notification channel."""
+        """Send central server-ban notification."""
         try:
             notification_channel = self.bot.get_channel(constants.EPN_server_notification_channel_id())
             if not notification_channel:
@@ -340,8 +337,10 @@ class EPNCommands(commands.Cog):
                     {"name": "serverunban", "value": "Unban a server from EPN", "inline": True},
                     {"name": "history", "value": "View ban history for a user", "inline": True},
                     {"name": "update", "value": "Update ban details", "inline": True},
-                    {"name": "sync", "value": "Force sync commands (Dev)", "inline": True},
-                    {"name": "alts", "value": "View all alt accounts for a Roblox ID", "inline": True}
+                    {"name": "servers", "value": "List all servers the bot is in", "inline": True},
+                    {"name": "authorize", "value": "Authorize a server for EPN access", "inline": True},
+                    {"name": "deauthorize", "value": "Deauthorize a server from EPN access", "inline": True},
+                    {"name": "authorized", "value": "List all authorized servers", "inline": True}
                 ]
             )
             await ctx.reply(embed=embed, ephemeral=True)
@@ -353,8 +352,8 @@ class EPNCommands(commands.Cog):
         user="The user to ban",
         reason="Reason for the ban",
         evidence="Evidence supporting the ban (optional)",
-        expires="When the ban expires (e.g., '1d', '2h', '30m' - optional)",
-        appealable="Whether the ban can be appealed (default: True)"
+        expires="When the ban expires (e.g. '1d', '2h', '30m')",
+        appealable="Whether the ban can be appealed"
     )
     async def ban(
         self,
@@ -388,34 +387,45 @@ class EPNCommands(commands.Cog):
         if has_admin and not has_staff:
             can_proceed, error_msg = await self.check_admin_rate_limit(ctx.author.id)
             if not can_proceed:
-                embed = EmbedDesign.error(
-                    title="Rate Limit Exceeded",
-                    description=error_msg
-                )
+                embed = EmbedDesign.error(title="Rate Limit Exceeded", description=error_msg)
                 await ctx.reply(embed=embed, ephemeral=True)
                 return
 
         async def command_logic(interaction: discord.Interaction):
             try:
                 if user.bot:
-                    embed = EmbedDesign.error(title="Invalid Target", description="You cannot ban bots.")
-                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    await interaction.followup.send(
+                        embed=EmbedDesign.error(title="Invalid Target", description="You cannot ban bots."),
+                        ephemeral=True
+                    )
                     return
 
-                if user == interaction.user:
-                    embed = EmbedDesign.error(title="Invalid Target", description="You cannot ban yourself.")
-                    await interaction.followup.send(embed=embed, ephemeral=True)
+                if user.id == interaction.user.id:
+                    await interaction.followup.send(
+                        embed=EmbedDesign.error(title="Invalid Target", description="You cannot ban yourself."),
+                        ephemeral=True
+                    )
                     return
 
                 target_is_core_staff = await StaffUtils.has_core_staff_permission_cross_guild(self.bot, user, "ban")
                 if target_is_core_staff:
-                    embed = EmbedDesign.error(title="Protected User", description="You cannot ban staff members or developers.")
-                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    await interaction.followup.send(
+                        embed=EmbedDesign.error(
+                            title="Protected User",
+                            description="You cannot ban staff members or developers."
+                        ),
+                        ephemeral=True
+                    )
                     return
 
                 if await self.bot.db.find_blacklist(user.id, active=True):
-                    embed = EmbedDesign.error(title="User Already Blacklisted", description="This user is already blacklisted.")
-                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    await interaction.followup.send(
+                        embed=EmbedDesign.error(
+                            title="User Already Blacklisted",
+                            description="This user is already blacklisted."
+                        ),
+                        ephemeral=True
+                    )
                     return
 
                 expires_at = None
@@ -423,8 +433,10 @@ class EPNCommands(commands.Cog):
                     try:
                         expires_at = self.parse_duration(expires)
                     except ValueError as e:
-                        embed = EmbedDesign.error(title="Invalid Expiry Time", description=str(e))
-                        await interaction.followup.send(embed=embed, ephemeral=True)
+                        await interaction.followup.send(
+                            embed=EmbedDesign.error(title="Invalid Expiry Time", description=str(e)),
+                            ephemeral=True
+                        )
                         return
 
                 await self.bot.db.insert_blacklist(
@@ -452,7 +464,6 @@ class EPNCommands(commands.Cog):
                 for guild in self.bot.guilds:
                     if guild.id == constants.main_server_id():
                         continue
-
                     if guild.id not in authorized_ids:
                         continue
 
@@ -472,7 +483,6 @@ class EPNCommands(commands.Cog):
                             appealable=appealable,
                             failed=False
                         )
-
                     except Exception as e:
                         failed_guilds.append(guild.name)
                         logger.error(f"Failed to ban user from {guild.name}: {e}")
@@ -524,23 +534,25 @@ class EPNCommands(commands.Cog):
                 await interaction.followup.send(embed=embed)
                 await self._safe_dm_user(user, dm_embed)
                 await self.send_ban_notification(
-                    "ban",
-                    user,
-                    reason,
-                    interaction.user,
-                    "Cross-Guild Ban",
-                    evidence,
-                    expires_at,
-                    appealable
+                    action="ban",
+                    user=user,
+                    reason=reason,
+                    staff_member=interaction.user,
+                    guild_name=interaction.guild.name,
+                    evidence=evidence,
+                    expires_at=expires_at,
+                    appealable=appealable
                 )
 
             except Exception as e:
                 logger.error(f"Error in ban command logic: {e}")
-                embed = EmbedDesign.error(
-                    "Ban Operation Failed",
-                    f"Could not complete the ban operation: {str(e)}"
+                await interaction.followup.send(
+                    embed=EmbedDesign.error(
+                        title="Ban Operation Failed",
+                        description=f"Could not complete the ban operation: {str(e)}"
+                    ),
+                    ephemeral=True
                 )
-                await interaction.followup.send(embed=embed, ephemeral=True)
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
 
@@ -578,10 +590,7 @@ class EPNCommands(commands.Cog):
         if has_admin and not has_staff:
             can_proceed, error_msg = await self.check_admin_rate_limit(ctx.author.id)
             if not can_proceed:
-                embed = EmbedDesign.error(
-                    title="Rate Limit Exceeded",
-                    description=error_msg
-                )
+                embed = EmbedDesign.error(title="Rate Limit Exceeded", description=error_msg)
                 await ctx.reply(embed=embed, ephemeral=True)
                 return
 
@@ -600,7 +609,6 @@ class EPNCommands(commands.Cog):
                 for guild in self.bot.guilds:
                     if guild.id == constants.main_server_id():
                         continue
-
                     if guild.id not in authorized_ids:
                         continue
 
@@ -617,7 +625,6 @@ class EPNCommands(commands.Cog):
                             command_guild=interaction.guild,
                             failed=False
                         )
-
                     except discord.NotFound:
                         pass
                     except Exception as e:
@@ -643,7 +650,6 @@ class EPNCommands(commands.Cog):
 
                 if not active_ban:
                     latest_ban = await self.bot.db.get_blacklist_status(user.id)
-
                     if latest_ban:
                         embed = EmbedDesign.warning(
                             title="No Active Ban Record",
@@ -654,16 +660,17 @@ class EPNCommands(commands.Cog):
                             title="No Ban Record Found",
                             description="User unbanned, but no database ban record exists for this user."
                         )
-
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 if not result:
-                    embed = EmbedDesign.error(
-                        title="Database Update Failed",
-                        description="An active ban record was found, but it could not be updated."
+                    await interaction.followup.send(
+                        embed=EmbedDesign.error(
+                            title="Database Update Failed",
+                            description="An active ban record was found, but it could not be updated."
+                        ),
+                        ephemeral=True
                     )
-                    await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 if has_admin and not has_staff:
@@ -702,20 +709,22 @@ class EPNCommands(commands.Cog):
                 await interaction.followup.send(embed=embed)
                 await self._safe_dm_user(user, dm_embed)
                 await self.send_ban_notification(
-                    "unban",
-                    user,
-                    reason,
-                    interaction.user,
-                    "Cross-Guild Unban"
+                    action="unban",
+                    user=user,
+                    reason=reason,
+                    staff_member=interaction.user,
+                    guild_name=interaction.guild.name
                 )
 
             except Exception as e:
                 logger.error(f"Error in unban command logic: {e}")
-                embed = EmbedDesign.error(
-                    "Unban Operation Failed",
-                    f"Could not complete the unban operation: {str(e)}"
+                await interaction.followup.send(
+                    embed=EmbedDesign.error(
+                        title="Unban Operation Failed",
+                        description=f"Could not complete the unban operation: {str(e)}"
+                    ),
+                    ephemeral=True
                 )
-                await interaction.followup.send(embed=embed, ephemeral=True)
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
 
@@ -837,7 +846,7 @@ class EPNCommands(commands.Cog):
         user="The user to update",
         new_reason="New reason for the ban",
         new_evidence="New evidence for the ban (optional)",
-        new_expires="New expiry time (e.g., '1d', '2h', '30m' - optional)",
+        new_expires="New expiry time (e.g. '1d', '2h', '30m')",
         new_appealable="Whether the ban can be appealed (optional)"
     )
     async def update(
@@ -872,21 +881,16 @@ class EPNCommands(commands.Cog):
         if has_admin and not has_staff:
             can_proceed, error_msg = await self.check_admin_rate_limit(ctx.author.id)
             if not can_proceed:
-                embed = EmbedDesign.error(
-                    title="Rate Limit Exceeded",
-                    description=error_msg
-                )
+                embed = EmbedDesign.error(title="Rate Limit Exceeded", description=error_msg)
                 await ctx.reply(embed=embed, ephemeral=True)
                 return
 
         async def command_logic(interaction: discord.Interaction):
             try:
                 current_record = await self.bot.db.find_blacklist(user.id, active=True, use_cache=False)
-                logger.info(f"EPN Update - Looking for active ban for user {user.id}: {current_record is not None}")
 
                 if not current_record:
                     all_records = await self.bot.db.find_all_blacklist_by_user(user.id, limit=5)
-                    logger.info(f"EPN Update - All blacklist records for user {user.id}: {len(all_records)} records found")
 
                     if all_records:
                         embed = EmbedDesign.warning(
@@ -912,8 +916,10 @@ class EPNCommands(commands.Cog):
                     try:
                         new_expires_at = self.parse_duration(new_expires)
                     except ValueError as e:
-                        embed = EmbedDesign.error(title="Invalid Expiry Time", description=str(e))
-                        await interaction.followup.send(embed=embed, ephemeral=True)
+                        await interaction.followup.send(
+                            embed=EmbedDesign.error(title="Invalid Expiry Time", description=str(e)),
+                            ephemeral=True
+                        )
                         return
 
                 update_data = {"reason": new_reason}
@@ -930,26 +936,28 @@ class EPNCommands(commands.Cog):
                     else:
                         result = await self.bot.db.update_blacklist_full(user.id, interaction.user.id, **update_data)
 
-                    logger.info(f"EPN Update - Database update result for user {user.id}: {result}")
-
                     if has_admin and not has_staff:
                         await self.admin_rate_limiter.record_request(interaction.user.id)
 
                 except Exception as e:
                     logger.error(f"EPN Update - Database error for user {user.id}: {e}")
-                    embed = EmbedDesign.error(
-                        title="Database Error",
-                        description="Failed to update ban details due to a database error."
+                    await interaction.followup.send(
+                        embed=EmbedDesign.error(
+                            title="Database Error",
+                            description="Failed to update ban details due to a database error."
+                        ),
+                        ephemeral=True
                     )
-                    await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 if not result:
-                    embed = EmbedDesign.error(
-                        title="Update Failed",
-                        description="Failed to update ban details. The ban may have been modified by another user."
+                    await interaction.followup.send(
+                        embed=EmbedDesign.error(
+                            title="Update Failed",
+                            description="Failed to update ban details. The ban may have been modified by another user."
+                        ),
+                        ephemeral=True
                     )
-                    await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 fields = []
@@ -1002,20 +1010,22 @@ class EPNCommands(commands.Cog):
 
                 changes_text = " | ".join(changes) if changes else f"reason: {old_reason} → {new_reason}"
                 await self.send_ban_notification(
-                    "update",
-                    user,
-                    f"Updated: {changes_text}",
-                    interaction.user,
-                    interaction.guild.name
+                    action="update",
+                    user=user,
+                    reason=f"Updated: {changes_text}",
+                    staff_member=interaction.user,
+                    guild_name=interaction.guild.name
                 )
 
             except Exception as e:
                 logger.error(f"Error in update command logic: {e}")
-                embed = EmbedDesign.error(
-                    "Update Operation Failed",
-                    f"Could not complete the update operation: {str(e)}"
+                await interaction.followup.send(
+                    embed=EmbedDesign.error(
+                        title="Update Operation Failed",
+                        description=f"Could not complete the update operation: {str(e)}"
+                    ),
+                    ephemeral=True
                 )
-                await interaction.followup.send(embed=embed, ephemeral=True)
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
 
@@ -1050,29 +1060,35 @@ class EPNCommands(commands.Cog):
         async def command_logic(interaction: discord.Interaction):
             try:
                 if not await StaffUtils.has_staff_permission_cross_guild(self.bot, interaction.user, "ban"):
-                    embed = EmbedDesign.error(
-                        title="Permission Denied",
-                        description="You don't have permission to ban servers."
+                    await interaction.followup.send(
+                        embed=EmbedDesign.error(
+                            title="Permission Denied",
+                            description="You don't have permission to ban servers."
+                        ),
+                        ephemeral=True
                     )
-                    await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 try:
                     guild_id_int = int(guild_id)
                 except ValueError:
-                    embed = EmbedDesign.error(
-                        title="Invalid Guild ID",
-                        description="Please provide a valid numeric guild ID."
+                    await interaction.followup.send(
+                        embed=EmbedDesign.error(
+                            title="Invalid Guild ID",
+                            description="Please provide a valid numeric guild ID."
+                        ),
+                        ephemeral=True
                     )
-                    await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 if await self.bot.db.find_server_ban(guild_id_int, active=True):
-                    embed = EmbedDesign.error(
-                        title="Server Already Banned",
-                        description="This server is already banned."
+                    await interaction.followup.send(
+                        embed=EmbedDesign.error(
+                            title="Server Already Banned",
+                            description="This server is already banned."
+                        ),
+                        ephemeral=True
                     )
-                    await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 guild = self.bot.get_guild(guild_id_int)
@@ -1083,8 +1099,10 @@ class EPNCommands(commands.Cog):
                     try:
                         expires_at = self.parse_duration(expires)
                     except ValueError as e:
-                        embed = EmbedDesign.error(title="Invalid Expiry Time", description=str(e))
-                        await interaction.followup.send(embed=embed, ephemeral=True)
+                        await interaction.followup.send(
+                            embed=EmbedDesign.error(title="Invalid Expiry Time", description=str(e)),
+                            ephemeral=True
+                        )
                         return
 
                 await self.bot.db.insert_server_ban(
@@ -1097,29 +1115,34 @@ class EPNCommands(commands.Cog):
                     appealable
                 )
 
-                embed = EmbedDesign.success(
-                    title="Server Banned",
-                    description=f"**{guild_name}** has been banned from EPN."
+                await interaction.followup.send(
+                    embed=EmbedDesign.success(
+                        title="Server Banned",
+                        description=f"**{guild_name}** has been banned from EPN."
+                    ),
+                    ephemeral=True
                 )
-                await interaction.followup.send(embed=embed, ephemeral=True)
+
                 await self.send_server_ban_notification(
-                    "serverban",
-                    guild_id_int,
-                    guild_name,
-                    reason,
-                    interaction.user,
-                    evidence,
-                    expires_at,
-                    appealable
+                    action="serverban",
+                    guild_id=guild_id_int,
+                    guild_name=guild_name,
+                    reason=reason,
+                    staff_member=interaction.user,
+                    evidence=evidence,
+                    expires_at=expires_at,
+                    appealable=appealable
                 )
 
             except Exception as e:
                 logger.error(f"Error in server_ban command logic: {e}")
-                embed = EmbedDesign.error(
-                    "Server Ban Operation Failed",
-                    f"Could not complete the server ban operation: {str(e)}"
+                await interaction.followup.send(
+                    embed=EmbedDesign.error(
+                        title="Server Ban Operation Failed",
+                        description=f"Could not complete the server ban operation: {str(e)}"
+                    ),
+                    ephemeral=True
                 )
-                await interaction.followup.send(embed=embed, ephemeral=True)
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
 
@@ -1140,62 +1163,75 @@ class EPNCommands(commands.Cog):
         async def command_logic(interaction: discord.Interaction):
             try:
                 if not await StaffUtils.has_staff_permission_cross_guild(self.bot, interaction.user, "ban"):
-                    embed = EmbedDesign.error(
-                        title="Permission Denied",
-                        description="You don't have permission to unban servers."
+                    await interaction.followup.send(
+                        embed=EmbedDesign.error(
+                            title="Permission Denied",
+                            description="You don't have permission to unban servers."
+                        ),
+                        ephemeral=True
                     )
-                    await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 try:
                     guild_id_int = int(guild_id)
                 except ValueError:
-                    embed = EmbedDesign.error(
-                        title="Invalid Guild ID",
-                        description="Please provide a valid numeric guild ID."
+                    await interaction.followup.send(
+                        embed=EmbedDesign.error(
+                            title="Invalid Guild ID",
+                            description="Please provide a valid numeric guild ID."
+                        ),
+                        ephemeral=True
                     )
-                    await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 server_ban = await self.bot.db.find_server_ban(guild_id_int, active=True)
                 if not server_ban:
-                    embed = EmbedDesign.error(
-                        title="Server Not Banned",
-                        description="This server is not currently banned."
+                    await interaction.followup.send(
+                        embed=EmbedDesign.error(
+                            title="Server Not Banned",
+                            description="This server is not currently banned."
+                        ),
+                        ephemeral=True
                     )
-                    await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 result = await self.bot.db.deactivate_server_ban(guild_id_int, interaction.user.id, reason)
                 if not result:
-                    embed = EmbedDesign.error(
-                        title="Database Error",
-                        description="Failed to update server ban record."
+                    await interaction.followup.send(
+                        embed=EmbedDesign.error(
+                            title="Database Error",
+                            description="Failed to update server ban record."
+                        ),
+                        ephemeral=True
                     )
-                    await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 guild_name = server_ban.get("guild_name", "Unknown Server")
-                embed = EmbedDesign.success(
-                    title="Server Unbanned",
-                    description=f"**{guild_name}** has been unbanned from EPN."
+                await interaction.followup.send(
+                    embed=EmbedDesign.success(
+                        title="Server Unbanned",
+                        description=f"**{guild_name}** has been unbanned from EPN."
+                    ),
+                    ephemeral=True
                 )
-                await interaction.followup.send(embed=embed, ephemeral=True)
+
                 await self.send_server_ban_notification(
-                    "serverunban",
-                    guild_id_int,
-                    guild_name,
-                    reason,
-                    interaction.user
+                    action="serverunban",
+                    guild_id=guild_id_int,
+                    guild_name=guild_name,
+                    reason=reason,
+                    staff_member=interaction.user
                 )
 
             except Exception as e:
                 logger.error(f"Error in server_unban command logic: {e}")
-                embed = EmbedDesign.error(
-                    "Server Unban Operation Failed",
-                    f"Could not complete the server unban operation: {str(e)}"
+                await interaction.followup.send(
+                    embed=EmbedDesign.error(
+                        title="Server Unban Operation Failed",
+                        description=f"Could not complete the server unban operation: {str(e)}"
+                    ),
+                    ephemeral=True
                 )
-                await interaction.followup.send(embed=embed, ephemeral=True)
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
 
@@ -1203,13 +1239,15 @@ class EPNCommands(commands.Cog):
     @app_commands.allowed_installs(guilds=True, users=False)
     @app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     async def servers(self, ctx: commands.Context):
-        """Show all servers the bot is in, with pagination if needed."""
+        """Show all servers the bot is in."""
         if not await StaffUtils.has_developer_permission_cross_guild(self.bot, ctx.author, "ban"):
-            embed = EmbedDesign.error(
-                title="Permission Denied",
-                description="You don't have permission to view servers. This requires Developer access."
+            await ctx.reply(
+                embed=EmbedDesign.error(
+                    title="Permission Denied",
+                    description="You don't have permission to view servers. This requires Developer access."
+                ),
+                ephemeral=True
             )
-            await ctx.reply(embed=embed, ephemeral=True)
             return
 
         guilds = sorted(self.bot.guilds, key=lambda g: g.member_count or 0, reverse=True)
@@ -1217,8 +1255,7 @@ class EPNCommands(commands.Cog):
         lines = []
         for g in guilds:
             owner = f"<@{g.owner_id}>" if g.owner_id else "Unknown"
-            line = f"• {g.name} ({g.id}) — Members: {g.member_count or 0} — Owner: {owner}"
-            lines.append(line)
+            lines.append(f"• {g.name} ({g.id}) — Members: {g.member_count or 0} — Owner: {owner}")
 
         page_size = 15
         pages = [lines[i:i + page_size] for i in range(0, len(lines), page_size)] or [[]]
@@ -1227,11 +1264,12 @@ class EPNCommands(commands.Cog):
 
         embeds = []
         total = len(guilds)
-        for chunk in pages:
+        for idx, chunk in enumerate(pages, 1):
             embed = EmbedDesign.info(
                 title="Bot Servers",
                 description=f"Total: {total} servers\n\n" + ("\n".join(chunk) if chunk else "No servers found.")
             )
+            embed.set_footer(text=f"Page {idx}/{len(pages)}")
             embeds.append(embed)
 
         view = Paginator(ctx.author, embeds)
@@ -1240,30 +1278,31 @@ class EPNCommands(commands.Cog):
     @EPN_group.command(name="authorize", description="Authorize a server for EPN access")
     @app_commands.allowed_installs(guilds=True, users=False)
     @app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
-    @app_commands.describe(
-        guild_id="The guild ID to authorize",
-        reason="Reason for authorization (optional)"
-    )
+    @app_commands.describe(guild_id="The guild ID to authorize", reason="Reason for authorization (optional)")
     async def authorize_server(self, ctx: commands.Context, guild_id: str, *, reason: Optional[str] = None):
         """Authorize a server for EPN access."""
         async def command_logic(interaction: discord.Interaction):
             try:
                 if not await StaffUtils.has_developer_permission_cross_guild(self.bot, interaction.user, "manage_guild"):
-                    embed = EmbedDesign.error(
-                        title="Permission Denied",
-                        description="You don't have permission to authorize servers. This requires EPN Developer access."
+                    await interaction.followup.send(
+                        embed=EmbedDesign.error(
+                            title="Permission Denied",
+                            description="You don't have permission to authorize servers. This requires EPN Developer access."
+                        ),
+                        ephemeral=True
                     )
-                    await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 try:
                     guild_id_int = int(guild_id)
                 except ValueError:
-                    embed = EmbedDesign.error(
-                        title="Invalid Guild ID",
-                        description="Please provide a valid numeric guild ID."
+                    await interaction.followup.send(
+                        embed=EmbedDesign.error(
+                            title="Invalid Guild ID",
+                            description="Please provide a valid numeric guild ID."
+                        ),
+                        ephemeral=True
                     )
-                    await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 try:
@@ -1273,72 +1312,80 @@ class EPNCommands(commands.Cog):
                     guild_name = "Unknown Server"
 
                 if await self.bot.db.is_server_authorized(guild_id_int):
-                    embed = EmbedDesign.warning(
-                        title="Already Authorized",
-                        description=f"Server **{guild_name}** is already authorized for EPN access."
+                    await interaction.followup.send(
+                        embed=EmbedDesign.warning(
+                            title="Already Authorized",
+                            description=f"Server **{guild_name}** is already authorized for EPN access."
+                        ),
+                        ephemeral=True
                     )
-                    await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 await self.bot.db.authorize_server(guild_id_int, guild_name, interaction.user.id, reason)
 
-                embed = EmbedDesign.success(
-                    title="Server Authorized",
-                    description=f"**{guild_name}** has been authorized for EPN access.",
-                    fields=[
-                        {"name": "Guild ID", "value": str(guild_id_int), "inline": True},
-                        {"name": "Authorized by", "value": interaction.user.mention, "inline": True},
-                        {"name": "Reason", "value": reason or "No reason provided", "inline": False}
-                    ]
+                await interaction.followup.send(
+                    embed=EmbedDesign.success(
+                        title="Server Authorized",
+                        description=f"**{guild_name}** has been authorized for EPN access.",
+                        fields=[
+                            {"name": "Guild ID", "value": str(guild_id_int), "inline": True},
+                            {"name": "Authorized by", "value": interaction.user.mention, "inline": True},
+                            {"name": "Reason", "value": reason or "No reason provided", "inline": False}
+                        ]
+                    )
                 )
-                await interaction.followup.send(embed=embed)
 
             except Exception as e:
                 logger.error(f"Error in authorize_server command logic: {e}")
-                embed = EmbedDesign.error(
-                    "Authorization Operation Failed",
-                    f"Could not complete the authorization operation: {str(e)}"
+                await interaction.followup.send(
+                    embed=EmbedDesign.error(
+                        title="Authorization Operation Failed",
+                        description=f"Could not complete the authorization operation: {str(e)}"
+                    ),
+                    ephemeral=True
                 )
-                await interaction.followup.send(embed=embed, ephemeral=True)
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
 
     @EPN_group.command(name="deauthorize", description="Deauthorize a server from EPN access")
     @app_commands.allowed_installs(guilds=True, users=False)
     @app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
-    @app_commands.describe(
-        guild_id="The guild ID to deauthorize",
-        reason="Reason for deauthorization (optional)"
-    )
+    @app_commands.describe(guild_id="The guild ID to deauthorize", reason="Reason for deauthorization (optional)")
     async def deauthorize_server(self, ctx: commands.Context, guild_id: str, *, reason: Optional[str] = None):
         """Deauthorize a server from EPN access."""
         async def command_logic(interaction: discord.Interaction):
             try:
                 if not await StaffUtils.has_developer_permission_cross_guild(self.bot, interaction.user, "manage_guild"):
-                    embed = EmbedDesign.error(
-                        title="Permission Denied",
-                        description="You don't have permission to deauthorize servers. This requires EPN Developer access."
+                    await interaction.followup.send(
+                        embed=EmbedDesign.error(
+                            title="Permission Denied",
+                            description="You don't have permission to deauthorize servers. This requires EPN Developer access."
+                        ),
+                        ephemeral=True
                     )
-                    await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 try:
                     guild_id_int = int(guild_id)
                 except ValueError:
-                    embed = EmbedDesign.error(
-                        title="Invalid Guild ID",
-                        description="Please provide a valid numeric guild ID."
+                    await interaction.followup.send(
+                        embed=EmbedDesign.error(
+                            title="Invalid Guild ID",
+                            description="Please provide a valid numeric guild ID."
+                        ),
+                        ephemeral=True
                     )
-                    await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 auth_info = await self.bot.db.get_server_authorization(guild_id_int)
                 if not auth_info:
-                    embed = EmbedDesign.warning(
-                        title="Not Authorized",
-                        description=f"Server with ID `{guild_id_int}` is not currently authorized for EPN access."
+                    await interaction.followup.send(
+                        embed=EmbedDesign.warning(
+                            title="Not Authorized",
+                            description=f"Server with ID `{guild_id_int}` is not currently authorized for EPN access."
+                        ),
+                        ephemeral=True
                     )
-                    await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 result = await self.bot.db.deauthorize_server(guild_id_int, interaction.user.id, reason)
@@ -1363,11 +1410,13 @@ class EPNCommands(commands.Cog):
 
             except Exception as e:
                 logger.error(f"Error in deauthorize_server command logic: {e}")
-                embed = EmbedDesign.error(
-                    "Deauthorization Operation Failed",
-                    f"Could not complete the deauthorization operation: {str(e)}"
+                await interaction.followup.send(
+                    embed=EmbedDesign.error(
+                        title="Deauthorization Operation Failed",
+                        description=f"Could not complete the deauthorization operation: {str(e)}"
+                    ),
+                    ephemeral=True
                 )
-                await interaction.followup.send(embed=embed, ephemeral=True)
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
 
@@ -1377,21 +1426,25 @@ class EPNCommands(commands.Cog):
     async def list_authorized_servers(self, ctx: commands.Context):
         """List all authorized servers."""
         if not await StaffUtils.has_developer_permission_cross_guild(self.bot, ctx.author, "manage_guild"):
-            embed = EmbedDesign.error(
-                title="Permission Denied",
-                description="You don't have permission to view authorized servers. This requires EPN Developer access."
+            await ctx.reply(
+                embed=EmbedDesign.error(
+                    title="Permission Denied",
+                    description="You don't have permission to view authorized servers. This requires EPN Developer access."
+                ),
+                ephemeral=True
             )
-            await ctx.reply(embed=embed, ephemeral=True)
             return
 
         authorized_servers = await self.bot.db.get_authorized_servers(limit=100)
 
         if not authorized_servers:
-            embed = EmbedDesign.info(
-                title="No Authorized Servers",
-                description="There are currently no authorized servers for EPN access."
+            await ctx.reply(
+                embed=EmbedDesign.info(
+                    title="No Authorized Servers",
+                    description="There are currently no authorized servers for EPN access."
+                ),
+                ephemeral=True
             )
-            await ctx.reply(embed=embed, ephemeral=True)
             return
 
         lines = []
@@ -1401,12 +1454,9 @@ class EPNCommands(commands.Cog):
             authorized_at = server.get("authorized_at")
             reason_text = server.get("reason", "No reason provided")
 
-            if authorized_at:
-                timestamp_str = f"<t:{int(authorized_at.timestamp())}:R>"
-            else:
-                timestamp_str = "Unknown"
-
+            timestamp_str = f"<t:{int(authorized_at.timestamp())}:R>" if authorized_at else "Unknown"
             line = f"• **{guild_name}** (`{guild_id}`) — {timestamp_str}"
+
             if reason_text and reason_text != "No reason provided":
                 short_reason = reason_text[:50] + ("..." if len(reason_text) > 50 else "")
                 line += f" — *{short_reason}*"
