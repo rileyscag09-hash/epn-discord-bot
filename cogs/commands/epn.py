@@ -148,7 +148,7 @@ class EPNCommands(commands.Cog):
             action_lower = action.lower()
 
             if action_lower == "ban":
-                title = "🚫 EPN User Ban Failed" if failed else "🚫 EPN User Ban"
+                title = ":no_entry_sign: EPN User Ban Failed" if failed else ":no_entry_sign: EPN User Ban"
                 color = EmbedDesign.ERROR
                 description = (
                     f"{user.mention} ({user.id}) failed to ban in Cross-Guild Ban by {staff_member.mention}"
@@ -156,7 +156,7 @@ class EPNCommands(commands.Cog):
                     f"{user.mention} ({user.id}) was banned in Cross-Guild Ban by {staff_member.mention}"
                 )
             elif action_lower == "unban":
-                title = "✅ EPN User Unban Failed" if failed else "✅ EPN User Unban"
+                title = ":white_check_mark: EPN User Unban Failed" if failed else ":white_check_mark: EPN User Unban"
                 color = EmbedDesign.WARNING if failed else EmbedDesign.SUCCESS
                 description = (
                     f"{user.mention} ({user.id}) failed to unban in Cross-Guild Unban by {staff_member.mention}"
@@ -175,6 +175,7 @@ class EPNCommands(commands.Cog):
             )
 
             embed.add_field(name="Reason", value=reason or "No reason provided", inline=False)
+            
 
             if evidence:
                 embed.add_field(name="Evidence", value=evidence[:1024], inline=False)
@@ -193,6 +194,10 @@ class EPNCommands(commands.Cog):
                     name="Appeals",
                     value="Allowed" if appealable else "Not allowed",
                     inline=True
+                )
+                embed.add_field(
+                    name="Server that ran commmand:",
+                    value=f"{interaction.guild.name} ~ {interaction.guild.id}"
                 )
 
             if error_text:
