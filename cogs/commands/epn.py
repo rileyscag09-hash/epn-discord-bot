@@ -3,19 +3,16 @@ from discord.ext import commands
 from discord import app_commands
 from datetime import datetime, timedelta
 from typing import Optional, Union
-import aiohttp
 import re
 import logging
+
 from utils.constants import Constants, EmbedDesign
 from utils.staff import StaffUtils
 from utils.rate_limiter import UserCommandRateLimiter
 from utils.validation import validate_input, validate_discord_id, InputSanitizer
 from utils.security_logger import get_security_logger
 
-# Define logger for this module
 logger = logging.getLogger(__name__)
-
-# Initialize constants
 constants = Constants()
 
 
@@ -27,14 +24,14 @@ class EPNCommands(commands.Cog):
         # Rate limiter for non-staff users (3 commands per hour)
         self.admin_rate_limiter = UserCommandRateLimiter(
             max_requests=3,
-            time_window=3600,  # 1 hour in seconds
+            time_window=3600,
             command_name="EPN_admin_commands"
         )
 
     def parse_duration(self, duration_str: str) -> datetime:
         """Parse a duration string like '1d', '2h', '30m' into a datetime."""
         duration_str = duration_str.strip().lower()
-        match = re.match(r'^(\d+)([dhms])$', duration_str)
+        match = re.match(r"^(\d+)([dhms])$", duration_str)
 
         if not match:
             raise ValueError(
@@ -44,13 +41,13 @@ class EPNCommands(commands.Cog):
         value, unit = match.groups()
         value = int(value)
 
-        if unit == 's':
+        if unit == "s":
             seconds = value
-        elif unit == 'm':
+        elif unit == "m":
             seconds = value * 60
-        elif unit == 'h':
+        elif unit == "h":
             seconds = value * 3600
-        elif unit == 'd':
+        elif unit == "d":
             seconds = value * 86400
         else:
             raise ValueError(f"Invalid time unit: {unit}")
@@ -58,15 +55,7 @@ class EPNCommands(commands.Cog):
         return datetime.utcnow() + timedelta(seconds=seconds)
 
     async def check_admin_rate_limit(self, user_id: int) -> tuple[bool, Optional[str]]:
-        """
-        Check if a non-staff user has exceeded their rate limit.
-
-        Args:
-            user_id: Discord user ID
-
-        Returns:
-            Tuple of (can_proceed, error_message)
-        """
+        """Check if a non-staff user has exceeded their rate limit."""
         can_proceed = await self.admin_rate_limiter.can_make_request(user_id)
 
         if not can_proceed:
@@ -81,9 +70,15 @@ class EPNCommands(commands.Cog):
                 else:
                     time_str = f"{wait_seconds}s"
 
-                error_msg = f"You have reached the rate limit for EPN commands (3 per hour). Try again in {time_str}."
+                error_msg = (
+                    f"You have reached the rate limit for EPN commands (3 per hour). "
+                    f"Try again in {time_str}."
+                )
             else:
-                error_msg = f"You have reached the rate limit for EPN commands (3 per hour). {remaining} requests remaining."
+                error_msg = (
+                    f"You have reached the rate limit for EPN commands (3 per hour). "
+                    f"{remaining} requests remaining."
+                )
 
             return False, error_msg
 
@@ -104,43 +99,45 @@ class EPNCommands(commands.Cog):
             log_config = await self.bot.db.find_log_config(guild.id)
             logger.info(f"log_config for guild {guild.id}: {log_config}")
 
-            if log_config:
-                channel_id = (
-                    log_config.get("channel_id")
-                    or log_config.get("log_channel_id")
-                    or log_config.get("channel")
-                )
+            if not log_config:
+                logger.warning(f"No log config found for guild {guild.id}")
+                return False
 
-                if not channel_id:
-                    logger.error(f"Log config missing channel field: {log_config}")
-                    return False
+            channel_id = (
+                log_config.get("channel_id")
+                or log_config.get("log_channel_id")
+                or log_config.get("channel")
+            )
 
-                channel = guild.get_channel(int(channel_id))
-                if channel and isinstance(channel, discord.TextChannel):
-                    await channel.send(embed=embed)
-                    return True
-                else:
-                    logger.error(f"Configured log channel {channel_id} not found in guild {guild.id}")
-                    return False
+            if not channel_id:
+                logger.error(f"Log config missing channel field: {log_config}")
+                return False
 
-            logger.warning(f"No log config found for guild {guild.id}")
+            channel = guild.get_channel(int(channel_id))
+            if channel and isinstance(channel, discord.TextChannel):
+                await channel.send(embed=embed)
+                return True
+
+            logger.error(f"Configured log channel {channel_id} not found in guild {guild.id}")
             return False
 
         except Exception as e:
             logger.error(f"Error sending staff log for guild {guild.id}: {e}")
             return False
-async def send_cross_guild_log(
+
+    async def send_cross_guild_log(
         self,
         guild: discord.Guild,
         action: str,
         user: Union[discord.User, discord.Member],
         staff_member: Union[discord.User, discord.Member],
         reason: str,
-        evidence: str = None,
-        expires_at: datetime = None,
+        command_guild: Optional[discord.Guild] = None,
+        evidence: Optional[str] = None,
+        expires_at: Optional[datetime] = None,
         appealable: bool = True,
         failed: bool = False,
-        error_text: str = None
+        error_text: Optional[str] = None
     ):
         """Send cross-guild ban/unban log to the configured channel for that guild."""
         try:
@@ -174,7 +171,6 @@ async def send_cross_guild_log(
             )
 
             embed.add_field(name="Reason", value=reason or "No reason provided", inline=False)
-            
 
             if evidence:
                 embed.add_field(name="Evidence", value=evidence[:1024], inline=False)
@@ -194,9 +190,12 @@ async def send_cross_guild_log(
                     value="Allowed" if appealable else "Not allowed",
                     inline=True
                 )
+
+            if command_guild:
                 embed.add_field(
-                    name="Server that ran commmand:",
-                    value=f"{interaction.guild.name} ~ {interaction.guild.id}"
+                    name="Server that ran command",
+                    value=f"{command_guild.name} ~ {command_guild.id}",
+                    inline=False
                 )
 
             if error_text:
@@ -213,9 +212,9 @@ async def send_cross_guild_log(
         user: Union[discord.User, discord.Member],
         reason: str,
         staff_member: discord.Member,
-        guild_name: str = None,
-        evidence: str = None,
-        expires_at: datetime = None,
+        guild_name: Optional[str] = None,
+        evidence: Optional[str] = None,
+        expires_at: Optional[datetime] = None,
         appealable: bool = True
     ):
         """Send ban notification to the specified central notification channel."""
@@ -272,8 +271,8 @@ async def send_cross_guild_log(
         guild_name: str,
         reason: str,
         staff_member: discord.Member,
-        evidence: str = None,
-        expires_at: datetime = None,
+        evidence: Optional[str] = None,
+        expires_at: Optional[datetime] = None,
         appealable: bool = True
     ):
         """Send server ban notification to the specified central notification channel."""
@@ -289,7 +288,9 @@ async def send_cross_guild_log(
                 else EmbedDesign.WARNING
             )
 
-            description_parts = [f"Server **{guild_name}** (`{guild_id}`) was {action.lower()} by {staff_member.mention}"]
+            description_parts = [
+                f"Server **{guild_name}** (`{guild_id}`) was {action.lower()} by {staff_member.mention}"
+            ]
             description_parts.append(f"**Reason:** {reason}")
 
             if evidence:
@@ -333,8 +334,8 @@ async def send_cross_guild_log(
                 title="EPN Commands",
                 description="Available EPN moderation commands:",
                 fields=[
-                    {"name": "ban", "value": "Ban a user across all guilds", "inline": True},
-                    {"name": "unban", "value": "Unban a user across all guilds", "inline": True},
+                    {"name": "ban", "value": "Ban a user across all authorized guilds except the main server", "inline": True},
+                    {"name": "unban", "value": "Unban a user across all authorized guilds except the main server", "inline": True},
                     {"name": "serverban", "value": "Ban a server from EPN", "inline": True},
                     {"name": "serverunban", "value": "Unban a server from EPN", "inline": True},
                     {"name": "history", "value": "View ban history for a user", "inline": True},
@@ -345,7 +346,7 @@ async def send_cross_guild_log(
             )
             await ctx.reply(embed=embed, ephemeral=True)
 
-    @EPN_group.command(name="ban", description="Ban a user across all authorized guilds")
+    @EPN_group.command(name="ban", description="Ban a user across all authorized guilds except the main server")
     @app_commands.allowed_installs(guilds=True, users=False)
     @app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     @app_commands.describe(
@@ -360,11 +361,11 @@ async def send_cross_guild_log(
         ctx: commands.Context,
         user: Union[discord.Member, discord.User],
         reason: str = "No reason provided",
-        evidence: str = None,
-        expires: str = None,
+        evidence: Optional[str] = None,
+        expires: Optional[str] = None,
         appealable: bool = True
     ):
-        """Ban a user across all authorized guilds."""
+        """Ban a user across all authorized guilds except the main server."""
         if not await self.bot.db.is_server_authorized(ctx.guild.id):
             embed = EmbedDesign.error(
                 title="Server Not Authorized",
@@ -439,12 +440,19 @@ async def send_cross_guild_log(
                     await self.admin_rate_limiter.record_request(interaction.user.id)
 
                 authorized_servers = await self.bot.db.get_authorized_servers(limit=500)
-                authorized_ids = {int(server["guild_id"]) for server in authorized_servers if server.get("guild_id")}
+                authorized_ids = {
+                    int(server["guild_id"])
+                    for server in authorized_servers
+                    if server.get("guild_id")
+                }
 
                 banned_guilds = []
                 failed_guilds = []
 
                 for guild in self.bot.guilds:
+                    if guild.id == constants.main_server_id():
+                        continue
+
                     if guild.id not in authorized_ids:
                         continue
 
@@ -458,6 +466,7 @@ async def send_cross_guild_log(
                             user=user,
                             staff_member=interaction.user,
                             reason=reason,
+                            command_guild=interaction.guild,
                             evidence=evidence,
                             expires_at=expires_at,
                             appealable=appealable,
@@ -474,6 +483,7 @@ async def send_cross_guild_log(
                             user=user,
                             staff_member=interaction.user,
                             reason=reason,
+                            command_guild=interaction.guild,
                             evidence=evidence,
                             expires_at=expires_at,
                             appealable=appealable,
@@ -526,17 +536,26 @@ async def send_cross_guild_log(
 
             except Exception as e:
                 logger.error(f"Error in ban command logic: {e}")
-                embed = EmbedDesign.error("Ban Operation Failed", f"Could not complete the ban operation: {str(e)}")
+                embed = EmbedDesign.error(
+                    "Ban Operation Failed",
+                    f"Could not complete the ban operation: {str(e)}"
+                )
                 await interaction.followup.send(embed=embed, ephemeral=True)
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
 
-    @EPN_group.command(name="unban", description="Unban a user across all authorized guilds")
+    @EPN_group.command(name="unban", description="Unban a user across all authorized guilds except the main server")
     @app_commands.allowed_installs(guilds=True, users=False)
     @app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     @app_commands.describe(user="The user to unban", reason="Reason for the unban")
-    async def unban(self, ctx: commands.Context, user: Union[discord.Member, discord.User], *, reason: str = "Appeal accepted"):
-        """Unban a user across all authorized guilds."""
+    async def unban(
+        self,
+        ctx: commands.Context,
+        user: Union[discord.Member, discord.User],
+        *,
+        reason: str = "Appeal accepted"
+    ):
+        """Unban a user across all authorized guilds except the main server."""
         if not await self.bot.db.is_server_authorized(ctx.guild.id):
             embed = EmbedDesign.error(
                 title="Server Not Authorized",
@@ -569,12 +588,19 @@ async def send_cross_guild_log(
         async def command_logic(interaction: discord.Interaction):
             try:
                 authorized_servers = await self.bot.db.get_authorized_servers(limit=500)
-                authorized_ids = {int(server["guild_id"]) for server in authorized_servers if server.get("guild_id")}
+                authorized_ids = {
+                    int(server["guild_id"])
+                    for server in authorized_servers
+                    if server.get("guild_id")
+                }
 
                 unbanned_guilds = []
                 failed_guilds = []
 
                 for guild in self.bot.guilds:
+                    if guild.id == constants.main_server_id():
+                        continue
+
                     if guild.id not in authorized_ids:
                         continue
 
@@ -588,6 +614,7 @@ async def send_cross_guild_log(
                             user=user,
                             staff_member=interaction.user,
                             reason=reason,
+                            command_guild=interaction.guild,
                             failed=False
                         )
 
@@ -603,6 +630,7 @@ async def send_cross_guild_log(
                             user=user,
                             staff_member=interaction.user,
                             reason=reason,
+                            command_guild=interaction.guild,
                             failed=True,
                             error_text=str(e)
                         )
@@ -673,11 +701,20 @@ async def send_cross_guild_log(
 
                 await interaction.followup.send(embed=embed)
                 await self._safe_dm_user(user, dm_embed)
-                await self.send_ban_notification("unban", user, reason, interaction.user, "Cross-Guild Unban")
+                await self.send_ban_notification(
+                    "unban",
+                    user,
+                    reason,
+                    interaction.user,
+                    "Cross-Guild Unban"
+                )
 
             except Exception as e:
                 logger.error(f"Error in unban command logic: {e}")
-                embed = EmbedDesign.error("Unban Operation Failed", f"Could not complete the unban operation: {str(e)}")
+                embed = EmbedDesign.error(
+                    "Unban Operation Failed",
+                    f"Could not complete the unban operation: {str(e)}"
+                )
                 await interaction.followup.send(embed=embed, ephemeral=True)
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
@@ -733,8 +770,7 @@ async def send_cross_guild_log(
             expires_at = record.get("expires_at")
             updated_at = record.get("updated_at")
 
-            field_lines = [f"**Status:** {status}"]
-            field_lines.append(f"**Reason:** {reason}")
+            field_lines = [f"**Status:** {status}", f"**Reason:** {reason}"]
 
             if evidence:
                 evidence_display = evidence if len(evidence) <= 100 else evidence[:97] + "..."
@@ -751,7 +787,9 @@ async def send_cross_guild_log(
                     if time_left.days > 0:
                         field_lines.append(f"**Time Left:** {time_left.days}d {time_left.seconds // 3600}h")
                     elif time_left.seconds > 3600:
-                        field_lines.append(f"**Time Left:** {time_left.seconds // 3600}h {(time_left.seconds % 3600) // 60}m")
+                        field_lines.append(
+                            f"**Time Left:** {time_left.seconds // 3600}h {(time_left.seconds % 3600) // 60}m"
+                        )
                     else:
                         field_lines.append(f"**Time Left:** {time_left.seconds // 60}m")
                 else:
@@ -788,7 +826,7 @@ async def send_cross_guild_log(
             )
 
         active_count = sum(1 for r in blacklist_records if r.get("active", False))
-        embed.set_footer(text=f"Active bans: {active_count}/{len(blacklist_records)} • Use /EPN update to modify active bans")
+        embed.set_footer(text=f"Active bans: {active_count}/{len(blacklist_records)} • Use /epn update to modify active bans")
 
         await ctx.reply(embed=embed, ephemeral=True)
 
@@ -807,9 +845,9 @@ async def send_cross_guild_log(
         ctx: commands.Context,
         user: Union[discord.Member, discord.User],
         new_reason: str,
-        new_evidence: str = None,
-        new_expires: str = None,
-        new_appealable: bool = None
+        new_evidence: Optional[str] = None,
+        new_expires: Optional[str] = None,
+        new_appealable: Optional[bool] = None
     ):
         """Update ban details including reason, evidence, expiry, and appeal status."""
         if not await self.bot.db.is_server_authorized(ctx.guild.id):
@@ -963,11 +1001,20 @@ async def send_cross_guild_log(
                 await interaction.followup.send(embed=embed)
 
                 changes_text = " | ".join(changes) if changes else f"reason: {old_reason} → {new_reason}"
-                await self.send_ban_notification("update", user, f"Updated: {changes_text}", interaction.user, interaction.guild.name)
+                await self.send_ban_notification(
+                    "update",
+                    user,
+                    f"Updated: {changes_text}",
+                    interaction.user,
+                    interaction.guild.name
+                )
 
             except Exception as e:
                 logger.error(f"Error in update command logic: {e}")
-                embed = EmbedDesign.error("Update Operation Failed", f"Could not complete the update operation: {str(e)}")
+                embed = EmbedDesign.error(
+                    "Update Operation Failed",
+                    f"Could not complete the update operation: {str(e)}"
+                )
                 await interaction.followup.send(embed=embed, ephemeral=True)
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
@@ -987,8 +1034,8 @@ async def send_cross_guild_log(
         ctx: commands.Context,
         guild_id: str,
         reason: str = "No reason provided",
-        evidence: str = None,
-        expires: str = None,
+        evidence: Optional[str] = None,
+        expires: Optional[str] = None,
         appealable: bool = True
     ):
         """Ban a server from EPN."""
@@ -1003,19 +1050,28 @@ async def send_cross_guild_log(
         async def command_logic(interaction: discord.Interaction):
             try:
                 if not await StaffUtils.has_staff_permission_cross_guild(self.bot, interaction.user, "ban"):
-                    embed = EmbedDesign.error(title="Permission Denied", description="You don't have permission to ban servers.")
+                    embed = EmbedDesign.error(
+                        title="Permission Denied",
+                        description="You don't have permission to ban servers."
+                    )
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 try:
                     guild_id_int = int(guild_id)
                 except ValueError:
-                    embed = EmbedDesign.error(title="Invalid Guild ID", description="Please provide a valid numeric guild ID.")
+                    embed = EmbedDesign.error(
+                        title="Invalid Guild ID",
+                        description="Please provide a valid numeric guild ID."
+                    )
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 if await self.bot.db.find_server_ban(guild_id_int, active=True):
-                    embed = EmbedDesign.error(title="Server Already Banned", description="This server is already banned.")
+                    embed = EmbedDesign.error(
+                        title="Server Already Banned",
+                        description="This server is already banned."
+                    )
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
@@ -1041,13 +1097,28 @@ async def send_cross_guild_log(
                     appealable
                 )
 
-                embed = EmbedDesign.success(title="Server Banned", description=f"**{guild_name}** has been banned from EPN.")
+                embed = EmbedDesign.success(
+                    title="Server Banned",
+                    description=f"**{guild_name}** has been banned from EPN."
+                )
                 await interaction.followup.send(embed=embed, ephemeral=True)
-                await self.send_server_ban_notification("serverban", guild_id_int, guild_name, reason, interaction.user, evidence, expires_at, appealable)
+                await self.send_server_ban_notification(
+                    "serverban",
+                    guild_id_int,
+                    guild_name,
+                    reason,
+                    interaction.user,
+                    evidence,
+                    expires_at,
+                    appealable
+                )
 
             except Exception as e:
                 logger.error(f"Error in server_ban command logic: {e}")
-                embed = EmbedDesign.error("Server Ban Operation Failed", f"Could not complete the server ban operation: {str(e)}")
+                embed = EmbedDesign.error(
+                    "Server Ban Operation Failed",
+                    f"Could not complete the server ban operation: {str(e)}"
+                )
                 await interaction.followup.send(embed=embed, ephemeral=True)
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
@@ -1069,37 +1140,61 @@ async def send_cross_guild_log(
         async def command_logic(interaction: discord.Interaction):
             try:
                 if not await StaffUtils.has_staff_permission_cross_guild(self.bot, interaction.user, "ban"):
-                    embed = EmbedDesign.error(title="Permission Denied", description="You don't have permission to unban servers.")
+                    embed = EmbedDesign.error(
+                        title="Permission Denied",
+                        description="You don't have permission to unban servers."
+                    )
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 try:
                     guild_id_int = int(guild_id)
                 except ValueError:
-                    embed = EmbedDesign.error(title="Invalid Guild ID", description="Please provide a valid numeric guild ID.")
+                    embed = EmbedDesign.error(
+                        title="Invalid Guild ID",
+                        description="Please provide a valid numeric guild ID."
+                    )
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 server_ban = await self.bot.db.find_server_ban(guild_id_int, active=True)
                 if not server_ban:
-                    embed = EmbedDesign.error(title="Server Not Banned", description="This server is not currently banned.")
+                    embed = EmbedDesign.error(
+                        title="Server Not Banned",
+                        description="This server is not currently banned."
+                    )
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 result = await self.bot.db.deactivate_server_ban(guild_id_int, interaction.user.id, reason)
                 if not result:
-                    embed = EmbedDesign.error(title="Database Error", description="Failed to update server ban record.")
+                    embed = EmbedDesign.error(
+                        title="Database Error",
+                        description="Failed to update server ban record."
+                    )
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
                 guild_name = server_ban.get("guild_name", "Unknown Server")
-                embed = EmbedDesign.success(title="Server Unbanned", description=f"**{guild_name}** has been unbanned from EPN.")
+                embed = EmbedDesign.success(
+                    title="Server Unbanned",
+                    description=f"**{guild_name}** has been unbanned from EPN."
+                )
                 await interaction.followup.send(embed=embed, ephemeral=True)
-                await self.send_server_ban_notification("serverunban", guild_id_int, guild_name, reason, interaction.user)
+                await self.send_server_ban_notification(
+                    "serverunban",
+                    guild_id_int,
+                    guild_name,
+                    reason,
+                    interaction.user
+                )
 
             except Exception as e:
                 logger.error(f"Error in server_unban command logic: {e}")
-                embed = EmbedDesign.error("Server Unban Operation Failed", f"Could not complete the server unban operation: {str(e)}")
+                embed = EmbedDesign.error(
+                    "Server Unban Operation Failed",
+                    f"Could not complete the server unban operation: {str(e)}"
+                )
                 await interaction.followup.send(embed=embed, ephemeral=True)
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
@@ -1132,7 +1227,7 @@ async def send_cross_guild_log(
 
         embeds = []
         total = len(guilds)
-        for idx, chunk in enumerate(pages, 1):
+        for chunk in pages:
             embed = EmbedDesign.info(
                 title="Bot Servers",
                 description=f"Total: {total} servers\n\n" + ("\n".join(chunk) if chunk else "No servers found.")
@@ -1149,7 +1244,7 @@ async def send_cross_guild_log(
         guild_id="The guild ID to authorize",
         reason="Reason for authorization (optional)"
     )
-    async def authorize_server(self, ctx: commands.Context, guild_id: str, *, reason: str = None):
+    async def authorize_server(self, ctx: commands.Context, guild_id: str, *, reason: Optional[str] = None):
         """Authorize a server for EPN access."""
         async def command_logic(interaction: discord.Interaction):
             try:
@@ -1164,7 +1259,10 @@ async def send_cross_guild_log(
                 try:
                     guild_id_int = int(guild_id)
                 except ValueError:
-                    embed = EmbedDesign.error(title="Invalid Guild ID", description="Please provide a valid numeric guild ID.")
+                    embed = EmbedDesign.error(
+                        title="Invalid Guild ID",
+                        description="Please provide a valid numeric guild ID."
+                    )
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
@@ -1197,7 +1295,10 @@ async def send_cross_guild_log(
 
             except Exception as e:
                 logger.error(f"Error in authorize_server command logic: {e}")
-                embed = EmbedDesign.error("Authorization Operation Failed", f"Could not complete the authorization operation: {str(e)}")
+                embed = EmbedDesign.error(
+                    "Authorization Operation Failed",
+                    f"Could not complete the authorization operation: {str(e)}"
+                )
                 await interaction.followup.send(embed=embed, ephemeral=True)
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
@@ -1209,7 +1310,7 @@ async def send_cross_guild_log(
         guild_id="The guild ID to deauthorize",
         reason="Reason for deauthorization (optional)"
     )
-    async def deauthorize_server(self, ctx: commands.Context, guild_id: str, *, reason: str = None):
+    async def deauthorize_server(self, ctx: commands.Context, guild_id: str, *, reason: Optional[str] = None):
         """Deauthorize a server from EPN access."""
         async def command_logic(interaction: discord.Interaction):
             try:
@@ -1224,7 +1325,10 @@ async def send_cross_guild_log(
                 try:
                     guild_id_int = int(guild_id)
                 except ValueError:
-                    embed = EmbedDesign.error(title="Invalid Guild ID", description="Please provide a valid numeric guild ID.")
+                    embed = EmbedDesign.error(
+                        title="Invalid Guild ID",
+                        description="Please provide a valid numeric guild ID."
+                    )
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
@@ -1259,7 +1363,10 @@ async def send_cross_guild_log(
 
             except Exception as e:
                 logger.error(f"Error in deauthorize_server command logic: {e}")
-                embed = EmbedDesign.error("Deauthorization Operation Failed", f"Could not complete the deauthorization operation: {str(e)}")
+                embed = EmbedDesign.error(
+                    "Deauthorization Operation Failed",
+                    f"Could not complete the deauthorization operation: {str(e)}"
+                )
                 await interaction.followup.send(embed=embed, ephemeral=True)
 
         await self.bot.command_verifier.verify_and_execute(ctx, command_logic)
@@ -1289,10 +1396,10 @@ async def send_cross_guild_log(
 
         lines = []
         for server in authorized_servers:
-            guild_id = server.get('guild_id')
-            guild_name = server.get('guild_name', 'Unknown Server')
-            authorized_at = server.get('authorized_at')
-            reason_text = server.get('reason', 'No reason provided')
+            guild_id = server.get("guild_id")
+            guild_name = server.get("guild_name", "Unknown Server")
+            authorized_at = server.get("authorized_at")
+            reason_text = server.get("reason", "No reason provided")
 
             if authorized_at:
                 timestamp_str = f"<t:{int(authorized_at.timestamp())}:R>"
@@ -1301,7 +1408,8 @@ async def send_cross_guild_log(
 
             line = f"• **{guild_name}** (`{guild_id}`) — {timestamp_str}"
             if reason_text and reason_text != "No reason provided":
-                line += f" — *{reason_text[:50]}{'...' if len(reason_text) > 50 else ''}*"
+                short_reason = reason_text[:50] + ("..." if len(reason_text) > 50 else "")
+                line += f" — *{short_reason}*"
 
             lines.append(line)
 
