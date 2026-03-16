@@ -933,30 +933,39 @@ class Events(commands.Cog):
             await self.handle_EPN_ban_notification(member, reason, blacklisted_by)
 
         await self.check_alt_evasion(member)
+async def send_staff_log(self, guild: discord.Guild, embed: discord.Embed):
+    """Send log to server's configured log channel."""
+    try:
+        log_config = await self.bot.db.find_log_config(guild.id)
+        logger.info(f"log_config for guild {guild.id}: {log_config}")
 
-    async def send_staff_log(self, guild: discord.Guild, embed: discord.Embed):
-        """Send log to server's configured log channel."""
-        try:
-            log_config = await self.bot.db.find_log_config(guild.id)
+        if log_config:
+            channel_id = (
+                log_config.get("channel_id")
+                or log_config.get("log_channel_id")
+                or log_config.get("channel")
+            )
 
-            if log_config:
-                channel = guild.get_channel(log_config["channel_id"])
-                if channel:
-                    await channel.send(embed=embed)
-                else:
-                    logger.error(f"Configured log channel {log_config['channel_id']} not found in guild {guild.id}")
+            if not channel_id:
+                logger.error(f"Log config missing channel field: {log_config}")
+                return
+
+            channel = guild.get_channel(int(channel_id))
+            if channel and isinstance(channel, discord.TextChannel):
+                await channel.send(embed=embed)
             else:
-                for channel in guild.channels:
-                    if channel.name.lower() in ["staff", "mod-logs", "logs", "admin"]:
-                        try:
-                            await channel.send(embed=embed)
-                            break
-                        except discord.Forbidden:
-                            continue
+                logger.error(f"Configured log channel {channel_id} not found in guild {guild.id}")
+        else:
+            for channel in guild.channels:
+                if isinstance(channel, discord.TextChannel) and channel.name.lower() in ["staff", "mod-logs", "logs", "admin"]:
+                    try:
+                        await channel.send(embed=embed)
+                        break
+                    except discord.Forbidden:
+                        continue
 
-        except Exception as e:
-            logger.error(f"Error sending staff log: {e}")
-
+    except Exception as e:
+        logger.error(f"Error sending staff log: {e}")
     async def log_EPN_ban(self, member: discord.Member, reason: str, blacklisted_by: str, ban_successful: bool = True):
         """Log EPN ban to server's log channel."""
         status = "Banned" if ban_successful else "Ban Failed"
