@@ -526,7 +526,7 @@ class EPNCommands(commands.Cog):
                         inline=False
                     )
 
-                dm_embed = EmbedDesign.create_embed(
+                dm_embed = EmbedDesign.error(
                     title="You have been blacklisted in ER:LC Partner Network",
                     description=(
                         f"Hello, **{user.display_name}**. You have been banned from EPN.\n"
@@ -706,7 +706,7 @@ class EPNCommands(commands.Cog):
                         inline=False
                     )
 
-                dm_embed = EmbedDesign.create_embed(
+                dm_embed = EmbedDesign.success(
                     title="You have been unblacklisted in ER:LC Partner Network",
                     description=(
                         f"Hello, **{user.display_name}**. You have been unbanned from EPN.\n"
