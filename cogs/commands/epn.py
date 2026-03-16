@@ -536,7 +536,7 @@ class EPNCommands(commands.Cog):
                 )
 
                 await interaction.followup.send(embed=result_embed)
-                await self._safe_dm_user(user, dm_embed)
+                await user.send(embed=dm_embed)
 
                 # Main server logging/notification
                 await self.send_ban_notification(
@@ -716,7 +716,7 @@ class EPNCommands(commands.Cog):
                 )
 
                 await interaction.followup.send(embed=result_embed)
-                await self._safe_dm_user(user, dm_embed)
+                await user.send(embed=dm_embed)
 
                 # Main server logging/notification
                 await self.send_ban_notification(
