@@ -467,7 +467,7 @@ class EPNCommands(commands.Cog):
 
                 embed = EmbedDesign.success(
                     title="User Blacklisted",
-                    description=f"**{user.display_name}** has been added to the EPN blacklist."
+                    description=f"**{user.display_name}** has been added to the EPN blacklist.\n\nThis ban came from: {interaction.guild.name}"
                 )
                 embed.add_field(name="Successful Guilds", value=str(len(banned_guilds)), inline=True)
                 embed.add_field(name="Failed Guilds", value=str(len(failed_guilds)), inline=True)
@@ -627,7 +627,7 @@ class EPNCommands(commands.Cog):
 
                 embed = EmbedDesign.success(
                     title="User Unbanned",
-                    description=f"{user.mention} was unbanned by {interaction.user.mention}."
+                    description=f"{user.mention} was unbanned by {interaction.user.mention}.\n\nThis unban came from: {interaction.guild.name}"
                 )
                 embed.add_field(name="Successful Guilds", value=str(len(unbanned_guilds)), inline=True)
                 embed.add_field(name="Failed Guilds", value=str(len(failed_guilds)), inline=True)
