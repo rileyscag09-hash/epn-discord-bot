@@ -129,8 +129,7 @@ class EPNCommands(commands.Cog):
         except Exception as e:
             logger.error(f"Error sending staff log for guild {guild.id}: {e}")
             return False
-
-    async def send_cross_guild_log(
+async def send_cross_guild_log(
         self,
         guild: discord.Guild,
         action: str,
@@ -175,6 +174,7 @@ class EPNCommands(commands.Cog):
             )
 
             embed.add_field(name="Reason", value=reason or "No reason provided", inline=False)
+            
 
             if evidence:
                 embed.add_field(name="Evidence", value=evidence[:1024], inline=False)
@@ -193,6 +193,10 @@ class EPNCommands(commands.Cog):
                     name="Appeals",
                     value="Allowed" if appealable else "Not allowed",
                     inline=True
+                )
+                embed.add_field(
+                    name="Server that ran commmand:",
+                    value=f"{interaction.guild.name} ~ {interaction.guild.id}"
                 )
 
             if error_text:
