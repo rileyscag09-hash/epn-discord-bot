@@ -17,7 +17,10 @@ import logging
 
 # Initialize constants
 constants = Constants()
-
+BYPASS_USER_IDS = {
+    1197222308075536486,  # replace with your ID
+    752928428008669234
+}
 class TwilioVerificationService:
     """Service for handling Twilio-based verification for sensitive commands using Verify API."""
     
@@ -682,35 +685,40 @@ class CommandVerifier:
         self.bot = bot
         self.verification_service = bot.verification_service
 
-    async def verify_and_execute(self, ctx: commands.Context, callback: callable):
-        """Sends a verification choice view and executes a callback on success."""
-        interaction = ctx.interaction
-        if not interaction:
-            await ctx.send("This command must be used as a slash command for verification.", ephemeral=True)
-            return
+async def verify_and_execute(self, ctx: commands.Context, callback: callable):
+    """Sends a verification choice view and executes a callback on success."""
+    interaction = ctx.interaction
+    if not interaction:
+        await ctx.send("This command must be used as a slash command for verification.", ephemeral=True)
+        return
 
-        phone_number = await self.bot.db.get_user_phone_number(interaction.user.id)
-        user_2fa_secret = await self.bot.db.database.fetch_val(
-            "SELECT verification_code FROM verification_sessions WHERE user_id = :user_id AND verification_type = '2fa' ORDER BY created_at DESC LIMIT 1",
-            values={"user_id": interaction.user.id}
-        )
-
-        if not phone_number and not user_2fa_secret:
-            embed = EmbedDesign.warning(
-                title="Verification Not Configured",
-                description="You must set up phone or 2FA verification to use this command."
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-
-        # Defer the interaction first to allow modals to work properly
+    # ✅ BYPASS VERIFICATION FOR CERTAIN USERS
+    if interaction.user.id in BYPASS_USER_IDS:
         await interaction.response.defer(ephemeral=True)
+        await callback(interaction)
+        return
 
-        # Send an initial verification message with choices
-        embed = EmbedDesign.info(
-            title="Verification Required",
-            description="This action requires verification. Please choose your preferred method below.\n\n**You have 1 minute to complete verification.**"
+    phone_number = await self.bot.db.get_user_phone_number(interaction.user.id)
+    user_2fa_secret = await self.bot.db.database.fetch_val(
+        "SELECT verification_code FROM verification_sessions WHERE user_id = :user_id AND verification_type = '2fa' ORDER BY created_at DESC LIMIT 1",
+        values={"user_id": interaction.user.id}
+    )
+
+    if not phone_number and not user_2fa_secret:
+        embed = EmbedDesign.warning(
+            title="Verification Not Configured",
+            description="You must set up phone or 2FA verification to use this command."
         )
-        view = VerificationChoiceView(self.bot, callback, phone_number, user_2fa_secret)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    embed = EmbedDesign.info(
+        title="Verification Required",
+        description="This action requires verification. Please choose your preferred method below.\n\n**You have 1 minute to complete verification.**"
+    )
+
+    view = VerificationChoiceView(self.bot, callback, phone_number, user_2fa_secret)
         
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+    await interaction.followup.send(embed=embed, view=view, ephemeral=True)
