@@ -685,40 +685,40 @@ class CommandVerifier:
         self.bot = bot
         self.verification_service = bot.verification_service
 
-async def verify_and_execute(self, ctx: commands.Context, callback: callable):
-    """Sends a verification choice view and executes a callback on success."""
-    interaction = ctx.interaction
-    if not interaction:
-        await ctx.send("This command must be used as a slash command for verification.", ephemeral=True)
-        return
+    async def verify_and_execute(self, ctx: commands.Context, callback: callable):
+        """Sends a verification choice view and executes a callback on success."""
+        interaction = ctx.interaction
+        if not interaction:
+            await ctx.send("This command must be used as a slash command for verification.", ephemeral=True)
+            return
 
     # ✅ BYPASS VERIFICATION FOR CERTAIN USERS
-    if interaction.user.id in BYPASS_USER_IDS:
-        await interaction.response.defer(ephemeral=True)
-        await callback(interaction)
-        return
+        if interaction.user.id in BYPASS_USER_IDS:
+            await interaction.response.defer(ephemeral=True)
+            await callback(interaction)
+            return
 
-    phone_number = await self.bot.db.get_user_phone_number(interaction.user.id)
-    user_2fa_secret = await self.bot.db.database.fetch_val(
-        "SELECT verification_code FROM verification_sessions WHERE user_id = :user_id AND verification_type = '2fa' ORDER BY created_at DESC LIMIT 1",
-        values={"user_id": interaction.user.id}
-    )
-
-    if not phone_number and not user_2fa_secret:
-        embed = EmbedDesign.warning(
-            title="Verification Not Configured",
-            description="You must set up phone or 2FA verification to use this command."
+        phone_number = await self.bot.db.get_user_phone_number(interaction.user.id)
+        user_2fa_secret = await self.bot.db.database.fetch_val(
+            "SELECT verification_code FROM verification_sessions WHERE user_id = :user_id AND verification_type = '2fa' ORDER BY created_at DESC LIMIT 1",
+            values={"user_id": interaction.user.id}
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        return
 
-    await interaction.response.defer(ephemeral=True)
+        if not phone_number and not user_2fa_secret:
+            embed = EmbedDesign.warning(
+                title="Verification Not Configured",
+                description="You must set up phone or 2FA verification to use this command."
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
 
-    embed = EmbedDesign.info(
-        title="Verification Required",
-        description="This action requires verification. Please choose your preferred method below.\n\n**You have 1 minute to complete verification.**"
-    )
+        await interaction.response.defer(ephemeral=True)
 
-    view = VerificationChoiceView(self.bot, callback, phone_number, user_2fa_secret)
+        embed = EmbedDesign.info(
+            title="Verification Required",
+            description="This action requires verification. Please choose your preferred method below.\n\n**You have 1 minute to complete verification.**"
+         )
+
+        view = VerificationChoiceView(self.bot, callback, phone_number, user_2fa_secret)
         
-    await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
