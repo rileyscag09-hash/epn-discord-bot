@@ -32,7 +32,7 @@ class EPNCommands(commands.Cog):
         )
 
     def parse_duration(self, duration_str: str) -> datetime:
-        """Parse a duration string like '1d', '2h', '30m' into a datetime.."""
+        """Parse a duration string like '1d', '2h', '30m' into a datetime."""
         duration_str = duration_str.strip().lower()
         match = re.match(r'^(\d+)([dhms])$', duration_str)
 
@@ -89,6 +89,104 @@ class EPNCommands(commands.Cog):
 
         return True, None
 
+    async def _safe_dm_user(self, user: Union[discord.User, discord.Member], embed: discord.Embed):
+        """Try to DM a user without failing the command."""
+        try:
+            await user.send(embed=embed)
+        except discord.Forbidden:
+            logger.info(f"Could not DM user {user} ({user.id})")
+        except Exception as e:
+            logger.error(f"Error sending DM to user {user.id}: {e}")
+
+    async def send_staff_log(self, guild: discord.Guild, embed: discord.Embed):
+        """Send a log to the guild's configured log channel."""
+        try:
+            log_config = await self.bot.db.find_log_config(guild.id)
+
+            if log_config:
+                channel = guild.get_channel(log_config["channel_id"])
+                if channel:
+                    await channel.send(embed=embed)
+                    return
+                logger.error(f"Configured log channel {log_config['channel_id']} not found in guild {guild.id}")
+
+            for channel in guild.channels:
+                if isinstance(channel, discord.TextChannel) and channel.name.lower() in ["staff", "mod-logs", "logs", "admin"]:
+                    try:
+                        await channel.send(embed=embed)
+                        return
+                    except discord.Forbidden:
+                        continue
+
+        except Exception as e:
+            logger.error(f"Error sending staff log for guild {guild.id}: {e}")
+
+    async def log_cross_guild_action(
+        self,
+        action: str,
+        guild: discord.Guild,
+        user: Union[discord.User, discord.Member],
+        staff_member: discord.Member,
+        reason: str,
+        evidence: str = None,
+        expires_at: datetime = None,
+        appealable: bool = True,
+        failed: bool = False,
+        error_text: str = None
+    ):
+        """Log cross-guild ban or unban to the target guild's configured log channel."""
+        try:
+            action_lower = action.lower()
+
+            if action_lower == "ban":
+                title = "🚫 EPN User Ban Failed" if failed else "🚫 EPN User Ban"
+                color = EmbedDesign.ERROR
+                base_line = (
+                    f"{user.mention} ({user.id}) failed to ban in Cross-Guild Ban by {staff_member.mention}"
+                    if failed else
+                    f"{user.mention} ({user.id}) was banned in Cross-Guild Ban by {staff_member.mention}"
+                )
+            elif action_lower == "unban":
+                title = "✅ EPN User Unban Failed" if failed else "✅ EPN User Unban"
+                color = EmbedDesign.SUCCESS if not failed else EmbedDesign.WARNING
+                base_line = (
+                    f"{user.mention} ({user.id}) failed to unban in Cross-Guild Unban by {staff_member.mention}"
+                    if failed else
+                    f"{user.mention} ({user.id}) was unbanned in Cross-Guild Unban by {staff_member.mention}"
+                )
+            else:
+                title = f"EPN {action.title()}"
+                color = EmbedDesign.WARNING
+                base_line = f"{user.mention} ({user.id}) action `{action}` by {staff_member.mention}"
+
+            description_parts = [base_line, f"**Reason:** {reason}"]
+
+            if evidence:
+                description_parts.append(f"**Evidence:** {evidence}")
+
+            if expires_at and action_lower == "ban":
+                description_parts.append(f"**Expires:** <t:{int(expires_at.timestamp())}:F>")
+            elif action_lower == "ban":
+                description_parts.append("**Duration:** Permanent")
+
+            if action_lower == "ban":
+                description_parts.append(f"**Appeals:** {'Allowed' if appealable else 'Not allowed'}")
+
+            if error_text:
+                description_parts.append(f"**Error:** {error_text[:1000]}")
+
+            embed = EmbedDesign.create_embed(
+                title=title,
+                description="\n".join(description_parts),
+                color=color
+            )
+            embed.add_field(name="Guild", value=f"{guild.name} (`{guild.id}`)", inline=False)
+
+            await self.send_staff_log(guild, embed)
+
+        except Exception as e:
+            logger.error(f"Error logging cross-guild {action} for guild {guild.id}: {e}")
+
     @commands.hybrid_group(name="epn", description="EPN moderation commands")
     @app_commands.allowed_installs(guilds=True, users=False)
     @app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
@@ -122,7 +220,7 @@ class EPNCommands(commands.Cog):
         expires_at: datetime = None,
         appealable: bool = True
     ):
-        """Send ban notification to the specified channel."""
+        """Send ban notification to the central EPN user notification channel."""
         try:
             notification_channel = self.bot.get_channel(constants.EPN_user_notification_channel_id())
             if not notification_channel:
@@ -180,7 +278,7 @@ class EPNCommands(commands.Cog):
         expires_at: datetime = None,
         appealable: bool = True
     ):
-        """Send server ban notification to the specified channel."""
+        """Send server ban notification to the central EPN server notification channel."""
         try:
             notification_channel = self.bot.get_channel(constants.EPN_server_notification_channel_id())
             if not notification_channel:
@@ -320,27 +418,89 @@ class EPNCommands(commands.Cog):
                 if has_admin and not has_staff:
                     await self.admin_rate_limiter.record_request(interaction.user.id)
 
-                banned_guilds, failed_guilds = [], []
+                banned_guilds = []
+                failed_guilds = []
+
                 for guild in self.bot.guilds:
-                    if guild.id != constants.main_server_id():
-                        try:
-                            await guild.ban(user, reason=f"EPN Blacklist: {reason}")
-                            banned_guilds.append(guild.name)
-                        except Exception as e:
-                            failed_guilds.append(guild.name)
-                            logger.error(f"Failed to ban user from {guild.name}: {e}")
+                    if guild.id == constants.main_server_id():
+                        continue
+
+                    try:
+                        await guild.ban(user, reason=f"EPN Blacklist: {reason}")
+                        banned_guilds.append(guild.name)
+
+                        await self.log_cross_guild_action(
+                            action="ban",
+                            guild=guild,
+                            user=user,
+                            staff_member=interaction.user,
+                            reason=reason,
+                            evidence=evidence,
+                            expires_at=expires_at,
+                            appealable=appealable,
+                            failed=False
+                        )
+                    except Exception as e:
+                        failed_guilds.append(guild.name)
+                        logger.error(f"Failed to ban user from {guild.name}: {e}")
+
+                        await self.log_cross_guild_action(
+                            action="ban",
+                            guild=guild,
+                            user=user,
+                            staff_member=interaction.user,
+                            reason=reason,
+                            evidence=evidence,
+                            expires_at=expires_at,
+                            appealable=appealable,
+                            failed=True,
+                            error_text=str(e)
+                        )
 
                 embed = EmbedDesign.success(
                     title="User Blacklisted",
-                    description=f"**{user.display_name}** has been added to the EPN blacklist."
+                    description=f"**{user.display_name}** has been added to the EPN blacklist.",
+                    fields=[
+                        {"name": "Banned in", "value": str(len(banned_guilds)), "inline": True},
+                        {"name": "Failed in", "value": str(len(failed_guilds)), "inline": True},
+                    ]
                 )
-                embed1 = EmbedDesign.create_embed(
+
+                if banned_guilds:
+                    embed.add_field(
+                        name="Successful Guilds",
+                        value="\n".join(f"• {name}" for name in banned_guilds[:15]),
+                        inline=False
+                    )
+
+                if failed_guilds:
+                    embed.add_field(
+                        name="Failed Guilds",
+                        value="\n".join(f"• {name}" for name in failed_guilds[:15]),
+                        inline=False
+                    )
+
+                dm_embed = EmbedDesign.create_embed(
                     title="You have been blacklisted in ER:LC Partner Network",
-                    description=f"Hello, **{user.display_name}**. You have been banned from EPN.\n**Reason:**{reason}.\n\n Appeal at: https://discord.gg/SKVuBHWKCP"
+                    description=(
+                        f"Hello, **{user.display_name}**. You have been banned from EPN.\n"
+                        f"**Reason:** {reason}\n\n"
+                        f"Appeal at: https://discord.gg/SKVuBHWKCP"
+                    )
                 )
+
                 await interaction.followup.send(embed=embed)
-                await user.send(embed=embed1)
-                await self.send_ban_notification("ban", user, reason, interaction.user, "Cross-Guild Ban", evidence, expires_at, appealable)
+                await self._safe_dm_user(user, dm_embed)
+                await self.send_ban_notification(
+                    "ban",
+                    user,
+                    reason,
+                    interaction.user,
+                    "Cross-Guild Ban",
+                    evidence,
+                    expires_at,
+                    appealable
+                )
 
             except Exception as e:
                 logger.error(f"Error in ban command logic: {e}")
@@ -386,16 +546,37 @@ class EPNCommands(commands.Cog):
 
         async def command_logic(interaction: discord.Interaction):
             try:
-                unbanned_guilds, failed_guilds = [], []
+                unbanned_guilds = []
+                failed_guilds = []
+
                 for guild in self.bot.guilds:
                     try:
                         await guild.unban(user, reason="EPN Unblacklist")
                         unbanned_guilds.append(guild.name)
+
+                        await self.log_cross_guild_action(
+                            action="unban",
+                            guild=guild,
+                            user=user,
+                            staff_member=interaction.user,
+                            reason=reason,
+                            failed=False
+                        )
                     except discord.NotFound:
                         pass
                     except Exception as e:
                         failed_guilds.append(guild.name)
                         logger.error(f"Failed to unban user from {guild.name}: {e}")
+
+                        await self.log_cross_guild_action(
+                            action="unban",
+                            guild=guild,
+                            user=user,
+                            staff_member=interaction.user,
+                            reason=reason,
+                            failed=True,
+                            error_text=str(e)
+                        )
 
                 active_ban = await self.bot.db.find_blacklist(user.id, active=True, use_cache=False)
 
@@ -433,14 +614,38 @@ class EPNCommands(commands.Cog):
 
                 embed = EmbedDesign.success(
                     title="User Unbanned",
-                    description=f"{user.mention} was unbanned by {interaction.user.mention}."
+                    description=f"{user.mention} was unbanned by {interaction.user.mention}.",
+                    fields=[
+                        {"name": "Unbanned in", "value": str(len(unbanned_guilds)), "inline": True},
+                        {"name": "Failed in", "value": str(len(failed_guilds)), "inline": True},
+                    ]
                 )
-                embed1 = EmbedDesign.create_embed(
+
+                if unbanned_guilds:
+                    embed.add_field(
+                        name="Successful Guilds",
+                        value="\n".join(f"• {name}" for name in unbanned_guilds[:15]),
+                        inline=False
+                    )
+
+                if failed_guilds:
+                    embed.add_field(
+                        name="Failed Guilds",
+                        value="\n".join(f"• {name}" for name in failed_guilds[:15]),
+                        inline=False
+                    )
+
+                dm_embed = EmbedDesign.create_embed(
                     title="You have been unblacklisted in ER:LC Partner Network",
-                    description=f"Hello, **{user.display_name}**. You have been unbanned from EPN.\n**Reason:**{reason}.\n\n You may rejoin our servers at: https://discord.gg/SKVuBHWKCP"
+                    description=(
+                        f"Hello, **{user.display_name}**. You have been unbanned from EPN.\n"
+                        f"**Reason:** {reason}\n\n"
+                        f"You may rejoin our servers at: https://discord.gg/SKVuBHWKCP"
+                    )
                 )
+
                 await interaction.followup.send(embed=embed)
-                await user.send(embed=embed1)
+                await self._safe_dm_user(user, dm_embed)
                 await self.send_ban_notification("unban", user, reason, interaction.user, "Cross-Guild Unban")
 
             except Exception as e:
