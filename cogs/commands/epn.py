@@ -230,7 +230,7 @@ class EPNCommands(commands.Cog):
             description_parts = [
                 f"{user.mention} ({user.id}) was {action.lower()} in {guild_name or 'EPN'} by {staff_member.mention}"
             ]
-            description_parts.append(f"**Reason:** {reason}")
+            description_parts.append(f"**Reason:** {reason}\n\n Command sent from: {interaction.guild.name} ¬ {interaction.guild.id} by {interaction.user.mention}")
 
             if evidence:
                 description_parts.append(f"**Evidence:** {evidence}")
@@ -286,7 +286,7 @@ class EPNCommands(commands.Cog):
             )
 
             description_parts = [f"Server **{guild_name}** (`{guild_id}`) was {action.lower()} by {staff_member.mention}"]
-            description_parts.append(f"**Reason:** {reason}")
+            description_parts.append(f"**Reason:** {reason}\n\n Command sent from: {interaction.guild.name} ¬ {interaction.guild.id} by {interaction.user.mention}")
 
             if evidence:
                 description_parts.append(f"**Evidence:** {evidence}")
