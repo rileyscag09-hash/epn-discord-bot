@@ -272,7 +272,7 @@ EPN = EPN(
     owner_id=constants.bot_owner_id(),
     activity=discord.Activity(
         type=discord.ActivityType.listening,
-        name="Protecting the community"
+        name="Protecting your community"
     ),
     allowed_mentions=discord.AllowedMentions(
         everyone=False,
