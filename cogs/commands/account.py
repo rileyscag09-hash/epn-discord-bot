@@ -241,7 +241,7 @@ class AccountCommands(commands.Cog):
             "SS": "+211", "RW": "+250", "BI": "+257", "MW": "+265", "MZ": "+258"
         }
 
-    @commands.hybrid_group(name="my", description="User account commands")
+    @commands.hybrid_group(name="verify", description="User account commands")
     @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def my_group(self, ctx: commands.Context):
