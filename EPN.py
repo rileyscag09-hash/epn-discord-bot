@@ -56,71 +56,6 @@ class EPN(commands.Bot):
         await self.load_extensions()
 
         # -------------------------
-        # SYNC COMMANDS
-        # -------------------------
-        main_server = self.get_guild(constants.main_server_id())
-
-        try:
-
-            if main_server:
-
-                await self.tree.sync(guild=main_server)
-                logger.info(f"Commands synced to {main_server.name}")
-
-            else:
-
-                await self.tree.sync()
-                logger.info("Commands synced globally")
-
-            self.synced = True
-
-        except Exception as e:
-
-            logger.error(f"Command sync failed: {e}")
-
-        logger.info("setup_hook completed")
-
-    async def on_ready(self):
-
-        logger.info(f"Logged in as {self.user} ({self.user.id})")
-
-        # -------------------------
-        # SENTRY
-        # -------------------------
-        if constants.sentry_dsn():
-
-            sentry_sdk.init(
-                dsn=constants.sentry_dsn(),
-                environment=constants.sentry_environment(),
-                traces_sample_rate=1.0,
-                profiles_sample_rate=1.0,
-                enable_tracing=True,
-                before_send=self.before_send,
-                debug=constants.environment() == "development",
-            )
-
-            logger.info("Sentry initialized")
-
-        # -------------------------
-        # TWILIO
-        # -------------------------
-        try:
-
-            self.verification_service = TwilioVerificationService(self)
-            logger.info("Twilio verification service ready")
-
-        except Exception as e:
-
-            logger.error(f"Twilio failed: {e}")
-            self.verification_service = None
-
-        # -------------------------
-        # COMMAND VERIFIER
-        # -------------------------
-        self.command_verifier = CommandVerifier(self)
-        logger.info("Command verifier initialized")
-
-        # -------------------------
         # BLOCKING MANAGER
         # -------------------------
         self.blocking_manager = BlockingManager(self)
@@ -168,8 +103,62 @@ class EPN(commands.Bot):
             return True
 
         self.add_check(global_block_check)
-
         logger.info("Global blocking check registered")
+
+        # -------------------------
+        # SYNC COMMANDS
+        # -------------------------
+        try:
+            main_server = discord.Object(id=constants.main_server_id())
+            await self.tree.sync(guild=main_server)
+            logger.info(f"Commands synced to guild ID {main_server.id}")
+            self.synced = True
+
+        except Exception as e:
+
+            logger.error(f"Command sync failed: {e}")
+
+        logger.info("setup_hook completed")
+
+    async def on_ready(self):
+
+        logger.info(f"Logged in as {self.user} ({self.user.id})")
+
+        # -------------------------
+        # SENTRY
+        # -------------------------
+        if constants.sentry_dsn():
+
+            sentry_sdk.init(
+                dsn=constants.sentry_dsn(),
+                environment=constants.sentry_environment(),
+                traces_sample_rate=1.0,
+                profiles_sample_rate=1.0,
+                enable_tracing=True,
+                before_send=self.before_send,
+                debug=constants.environment() == "development",
+            )
+
+            logger.info("Sentry initialized")
+
+        # -------------------------
+        # TWILIO
+        # -------------------------
+        try:
+
+            self.verification_service = TwilioVerificationService(self)
+            logger.info("Twilio verification service ready")
+
+        except Exception as e:
+
+            logger.error(f"Twilio failed: {e}")
+            self.verification_service = None
+
+        # -------------------------
+        # COMMAND VERIFIER
+        # -------------------------
+        self.command_verifier = CommandVerifier(self)
+        logger.info("Command verifier initialized")
 
     # -------------------------
     # SENTRY FILTER
