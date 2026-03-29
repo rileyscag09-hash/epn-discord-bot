@@ -56,9 +56,6 @@ class Constants():
         logger.warning("No PostgreSQL database URL configured for current environment.")
         return ""
 
-    # -------------------------
-    # FIX: DATABASE URL FOR BOT
-    # -------------------------
     def database_url(self) -> str:
         """
         Universal database URL used by the bot.
@@ -137,6 +134,14 @@ class Constants():
 
     def EPN_server_notification_channel_id(self) -> int:
         return 1481746917808537797
+
+    # NEW: approval channel for /epn ban requests
+    def EPN_ban_approval_channel_id(self) -> int:
+        return 1487828844890165320  # replace with your approval channel ID
+
+    # NEW: role that gets pinged and can approve/deny
+    def EPN_ban_approval_role_id(self) -> int:
+        return 1487829181705355436  # replace with your approval role ID
 
     def developer_role_id(self) -> int:
         return 1481746915451207785
