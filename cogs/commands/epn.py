@@ -16,6 +16,31 @@ logger = logging.getLogger(__name__)
 constants = Constants()
 
 
+class BanApprovalView(discord.ui.View):
+    def __init__(self, cog: "EPNCommands", request_id: int):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.request_id = request_id
+
+    @discord.ui.button(label="Approve", style=discord.ButtonStyle.danger)
+    async def approve_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.cog.handle_ban_approval(
+            interaction=interaction,
+            request_id=self.request_id,
+            approved=True,
+            view=self
+        )
+
+    @discord.ui.button(label="Deny", style=discord.ButtonStyle.secondary)
+    async def deny_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.cog.handle_ban_approval(
+            interaction=interaction,
+            request_id=self.request_id,
+            approved=False,
+            view=self
+        )
+
+
 class EPNCommands(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -323,6 +348,291 @@ class EPNCommands(commands.Cog):
         except Exception as e:
             logger.error(f"Error sending server ban notification: {e}")
 
+    async def send_ban_approval_request(
+        self,
+        requester: Union[discord.Member, discord.User],
+        target: Union[discord.Member, discord.User],
+        reason: str,
+        source_guild: discord.Guild,
+        evidence: Optional[str] = None,
+        expires_at: Optional[datetime] = None,
+        appealable: bool = True
+    ):
+        approval_channel = self.bot.get_channel(constants.EPN_ban_approval_channel_id())
+        if not approval_channel:
+            raise RuntimeError("Approval channel not found")
+
+        request_id = await self.bot.db.create_pending_ban_request(
+            user_id=target.id,
+            username=str(target),
+            reason=reason,
+            evidence=evidence or "",
+            requested_by=requester.id,
+            source_guild_id=source_guild.id,
+            source_guild_name=source_guild.name,
+            expires_at=expires_at,
+            appealable=appealable
+        )
+
+        embed = EmbedDesign.warning(
+            title="EPN Ban Approval Required",
+            description=(
+                f"A manual approval is required before this user is banned.\n\n"
+                f"**Target:** {target.mention} (`{target.id}`)\n"
+                f"**Requested by:** {requester.mention}\n"
+                f"**Source Guild:** {source_guild.name} (`{source_guild.id}`)\n"
+                f"**Reason:** {reason}"
+            )
+        )
+
+        if evidence:
+            embed.add_field(name="Evidence", value=evidence[:1024], inline=False)
+
+        if expires_at:
+            embed.add_field(name="Expires", value=f"<t:{int(expires_at.timestamp())}:F>", inline=False)
+        else:
+            embed.add_field(name="Duration", value="Permanent", inline=False)
+
+        embed.add_field(name="Appeals", value="Allowed" if appealable else "Not allowed", inline=True)
+        embed.add_field(name="Request ID", value=str(request_id), inline=True)
+
+        view = BanApprovalView(self, request_id)
+
+        msg = await approval_channel.send(
+            content=f"<@&{constants.EPN_ban_approval_role_id()}> Ban approval requested.",
+            embed=embed,
+            view=view
+        )
+
+        await self.bot.db.set_pending_ban_message_id(request_id, msg.id, approval_channel.id)
+        return request_id, msg
+
+    async def execute_approved_ban(
+        self,
+        approver: Union[discord.Member, discord.User],
+        target_user_id: int,
+        reason: str,
+        requested_by_id: int,
+        source_guild_id: int,
+        evidence: Optional[str] = None,
+        expires_at: Optional[datetime] = None,
+        appealable: bool = True
+    ):
+        user = await self.bot.fetch_user(target_user_id)
+        source_guild = self.bot.get_guild(source_guild_id)
+        requester = await self.bot.fetch_user(requested_by_id)
+
+        await self.bot.db.insert_blacklist(
+            user.id,
+            reason,
+            evidence or "",
+            requested_by_id,
+            expires_at,
+            appealable
+        )
+
+        authorized_servers = await self.bot.db.get_authorized_servers(limit=500)
+        authorized_ids = {
+            int(server["guild_id"])
+            for server in authorized_servers
+            if server.get("guild_id")
+        }
+
+        banned_guilds = []
+        failed_guilds = []
+
+        for guild in self.bot.guilds:
+            if guild.id == constants.main_server_id():
+                continue
+            if guild.id not in authorized_ids:
+                continue
+
+            try:
+                await guild.ban(user, reason=f"EPN Blacklist approved by {approver} | {reason}")
+                banned_guilds.append(guild.name)
+
+                await self.send_cross_guild_log(
+                    guild=guild,
+                    action="ban",
+                    user=user,
+                    staff_member=approver,
+                    reason=reason,
+                    command_guild=source_guild,
+                    evidence=evidence,
+                    expires_at=expires_at,
+                    appealable=appealable,
+                    failed=False
+                )
+            except Exception as e:
+                failed_guilds.append(guild.name)
+                logger.error(f"Failed to ban user from {guild.name}: {e}")
+
+                await self.send_cross_guild_log(
+                    guild=guild,
+                    action="ban",
+                    user=user,
+                    staff_member=approver,
+                    reason=reason,
+                    command_guild=source_guild,
+                    evidence=evidence,
+                    expires_at=expires_at,
+                    appealable=appealable,
+                    failed=True,
+                    error_text=str(e)
+                )
+
+        dm_embed = EmbedDesign.create_embed(
+            title="You have been banned from ER:LC Partner Network",
+            description=(
+                f"Hello, **{user.display_name}**.\n\n"
+                f"You have been banned from the **ER:LC Partner Network**.\n\n"
+                f"**Reason:** {reason}\n"
+                f"**Appealable:** {'Yes' if appealable else 'No'}\n\n"
+                f"You can join the main server here:\n"
+                f"https://discord.gg/SKVuBHWKCP"
+            )
+        )
+
+        if expires_at:
+            dm_embed.add_field(
+                name="Ban Expires",
+                value=f"<t:{int(expires_at.timestamp())}:F>",
+                inline=False
+            )
+
+        await self._safe_dm_user(user, dm_embed)
+
+        await self.send_ban_notification(
+            action="ban",
+            user=user,
+            reason=reason,
+            staff_member=approver,
+            guild_name=source_guild.name if source_guild else "Unknown",
+            evidence=evidence,
+            expires_at=expires_at,
+            appealable=appealable
+        )
+
+        return banned_guilds, failed_guilds, user, requester
+
+    async def handle_ban_approval(
+        self,
+        interaction: discord.Interaction,
+        request_id: int,
+        approved: bool,
+        view: discord.ui.View
+    ):
+        try:
+            member = interaction.guild.get_member(interaction.user.id)
+            if not member:
+                await interaction.response.send_message("Could not verify your member record.", ephemeral=True)
+                return
+
+            has_staff = await StaffUtils.has_staff_permission_cross_guild(self.bot, member, "ban")
+            has_role = any(role.id == constants.EPN_ban_approval_role_id() for role in member.roles)
+
+            if not (has_staff or has_role):
+                await interaction.response.send_message(
+                    "You do not have permission to approve or deny EPN bans.",
+                    ephemeral=True
+                )
+                return
+
+            request = await self.bot.db.get_pending_ban_request(request_id)
+            if not request:
+                await interaction.response.send_message(
+                    "This ban request no longer exists.",
+                    ephemeral=True
+                )
+                return
+
+            if request.get("status") != "pending":
+                await interaction.response.send_message(
+                    f"This request has already been {request.get('status', 'processed')}.",
+                    ephemeral=True
+                )
+                return
+
+            if not approved:
+                await self.bot.db.update_pending_ban_request_status(
+                    request_id=request_id,
+                    status="denied",
+                    reviewed_by=interaction.user.id
+                )
+
+                old_embed = interaction.message.embeds[0]
+                new_embed = discord.Embed(
+                    title=old_embed.title,
+                    description=old_embed.description,
+                    color=EmbedDesign.WARNING
+                )
+                for field in old_embed.fields:
+                    new_embed.add_field(name=field.name, value=field.value, inline=field.inline)
+                new_embed.add_field(name="Review Result", value=f"Denied by {interaction.user.mention}", inline=False)
+                new_embed.timestamp = datetime.utcnow()
+
+                for item in view.children:
+                    item.disabled = True
+
+                await interaction.response.edit_message(embed=new_embed, view=view)
+                return
+
+            await interaction.response.defer()
+
+            banned_guilds, failed_guilds, user, requester = await self.execute_approved_ban(
+                approver=interaction.user,
+                target_user_id=request["user_id"],
+                reason=request["reason"],
+                requested_by_id=request["requested_by"],
+                source_guild_id=request["source_guild_id"],
+                evidence=request.get("evidence"),
+                expires_at=request.get("expires_at"),
+                appealable=request.get("appealable", True)
+            )
+
+            await self.bot.db.update_pending_ban_request_status(
+                request_id=request_id,
+                status="approved",
+                reviewed_by=interaction.user.id
+            )
+
+            old_embed = interaction.message.embeds[0]
+            new_embed = discord.Embed(
+                title=old_embed.title,
+                description=old_embed.description,
+                color=EmbedDesign.ERROR
+            )
+            for field in old_embed.fields:
+                new_embed.add_field(name=field.name, value=field.value, inline=field.inline)
+            new_embed.add_field(
+                name="Review Result",
+                value=(
+                    f"Approved by {interaction.user.mention}\n"
+                    f"Successful Guilds: {len(banned_guilds)}\n"
+                    f"Failed Guilds: {len(failed_guilds)}"
+                ),
+                inline=False
+            )
+            new_embed.timestamp = datetime.utcnow()
+
+            for item in view.children:
+                item.disabled = True
+
+            await interaction.edit_original_response(embed=new_embed, view=view)
+
+        except Exception as e:
+            logger.error(f"Error handling ban approval for request {request_id}: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "An error occurred while processing this approval.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "An error occurred while processing this approval.",
+                    ephemeral=True
+                )
+
     @commands.hybrid_group(name="epn", description="EPN moderation commands")
     @app_commands.allowed_installs(guilds=True, users=False)
     @app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
@@ -440,120 +750,29 @@ class EPNCommands(commands.Cog):
                         )
                         return
 
-                await self.bot.db.insert_blacklist(
-                    user.id,
-                    reason,
-                    evidence or "",
-                    interaction.user.id,
-                    expires_at,
-                    appealable
+                request_id, _ = await self.send_ban_approval_request(
+                    requester=interaction.user,
+                    target=user,
+                    reason=reason,
+                    source_guild=interaction.guild,
+                    evidence=evidence,
+                    expires_at=expires_at,
+                    appealable=appealable
                 )
 
                 if has_admin and not has_staff:
                     await self.admin_rate_limiter.record_request(interaction.user.id)
 
-                authorized_servers = await self.bot.db.get_authorized_servers(limit=500)
-                authorized_ids = {
-                    int(server["guild_id"])
-                    for server in authorized_servers
-                    if server.get("guild_id")
-                }
-
-                banned_guilds = []
-                failed_guilds = []
-
-                for guild in self.bot.guilds:
-                    if guild.id == constants.main_server_id():
-                        continue
-                    if guild.id not in authorized_ids:
-                        continue
-
-                    try:
-                        await guild.ban(user, reason=f"EPN Blacklist: {reason}")
-                        banned_guilds.append(guild.name)
-
-                        await self.send_cross_guild_log(
-                            guild=guild,
-                            action="ban",
-                            user=user,
-                            staff_member=interaction.user,
-                            reason=reason,
-                            command_guild=interaction.guild,
-                            evidence=evidence,
-                            expires_at=expires_at,
-                            appealable=appealable,
-                            failed=False
+                await interaction.followup.send(
+                    embed=EmbedDesign.success(
+                        title="Ban Request Submitted",
+                        description=(
+                            f"A manual approval request has been sent for {user.mention}.\n\n"
+                            f"**Request ID:** `{request_id}`\n"
+                            f"The user will not be banned until a reviewer approves it."
                         )
-                    except Exception as e:
-                        failed_guilds.append(guild.name)
-                        logger.error(f"Failed to ban user from {guild.name}: {e}")
-
-                        await self.send_cross_guild_log(
-                            guild=guild,
-                            action="ban",
-                            user=user,
-                            staff_member=interaction.user,
-                            reason=reason,
-                            command_guild=interaction.guild,
-                            evidence=evidence,
-                            expires_at=expires_at,
-                            appealable=appealable,
-                            failed=True,
-                            error_text=str(e)
-                        )
-
-                result_embed = EmbedDesign.success(
-                    title="User Blacklisted",
-                    description=f"**{user.display_name}** has been added to the EPN blacklist."
-                )
-                result_embed.add_field(name="Successful Guilds", value=str(len(banned_guilds)), inline=True)
-                result_embed.add_field(name="Failed Guilds", value=str(len(failed_guilds)), inline=True)
-
-                if banned_guilds:
-                    result_embed.add_field(
-                        name="Banned In",
-                        value="\n".join(f"• {name}" for name in banned_guilds[:20]),
-                        inline=False
-                    )
-
-                if failed_guilds:
-                    result_embed.add_field(
-                        name="Failed In",
-                        value="\n".join(f"• {name}" for name in failed_guilds[:20]),
-                        inline=False
-                    )
-
-                dm_embed = EmbedDesign.create_embed(
-                    title="You have been banned from ER:LC Partner Network",
-                    description=(
-                        f"Hello, **{user.display_name}**.\n\n"
-                        f"You have been banned from the **ER:LC Partner Network**.\n\n"
-                        f"**Reason:** {reason}\n"
-                        f"**Appealable:** {'Yes' if appealable else 'No'}\n\n"
-                        f"You can join the main server here:\n"
-                        f"https://discord.gg/SKVuBHWKCP"
-                    )
-                )
-
-                if expires_at:
-                    dm_embed.add_field(
-                        name="Ban Expires",
-                        value=f"<t:{int(expires_at.timestamp())}:F>",
-                        inline=False
-                    )
-
-                await interaction.followup.send(embed=result_embed)
-                await self._safe_dm_user(user, dm_embed)
-
-                await self.send_ban_notification(
-                    action="ban",
-                    user=user,
-                    reason=reason,
-                    staff_member=interaction.user,
-                    guild_name=interaction.guild.name,
-                    evidence=evidence,
-                    expires_at=expires_at,
-                    appealable=appealable
+                    ),
+                    ephemeral=True
                 )
 
             except Exception as e:
