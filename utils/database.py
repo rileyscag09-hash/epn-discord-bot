@@ -259,6 +259,27 @@ class DatabaseManager:
         """)
 
         await self.database.execute("""
+            CREATE TABLE IF NOT EXISTS pending_ban_requests (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                username TEXT,
+                reason TEXT NOT NULL,
+                evidence TEXT,
+                requested_by BIGINT NOT NULL,
+                reviewed_by BIGINT,
+                source_guild_id BIGINT NOT NULL,
+                source_guild_name TEXT,
+                expires_at TIMESTAMP WITHOUT TIME ZONE,
+                appealable BOOLEAN DEFAULT TRUE,
+                status TEXT NOT NULL DEFAULT 'pending',
+                message_id BIGINT,
+                channel_id BIGINT,
+                created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                reviewed_at TIMESTAMP WITHOUT TIME ZONE
+            )
+        """)
+
+        await self.database.execute("""
             CREATE TABLE IF NOT EXISTS rate_limiter_state (
                 api_name TEXT PRIMARY KEY,
                 request_times JSONB NOT NULL DEFAULT '[]',
@@ -288,7 +309,10 @@ class DatabaseManager:
             "CREATE INDEX IF NOT EXISTS idx_user_phone_numbers_phone_number ON user_phone_numbers(phone_number)",
             "CREATE INDEX IF NOT EXISTS idx_user_2fa_backup_user_id ON user_2fa_backup(user_id)",
             "CREATE INDEX IF NOT EXISTS idx_authorized_servers_guild_id ON authorized_servers(guild_id)",
-            "CREATE INDEX IF NOT EXISTS idx_authorized_servers_active ON authorized_servers(active)"
+            "CREATE INDEX IF NOT EXISTS idx_authorized_servers_active ON authorized_servers(active)",
+            "CREATE INDEX IF NOT EXISTS idx_pending_ban_requests_user_id ON pending_ban_requests(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_pending_ban_requests_status ON pending_ban_requests(status)",
+            "CREATE INDEX IF NOT EXISTS idx_pending_ban_requests_created_at ON pending_ban_requests(created_at)"
         ]
 
         partial_unique_indexes = [
@@ -335,6 +359,56 @@ class DatabaseManager:
                 ADD COLUMN IF NOT EXISTS alert_role_id BIGINT
             """)
             logger.info("Ensured alert_role_id column exists on alert_configs table")
+
+            await self.database.execute("""
+                ALTER TABLE pending_ban_requests
+                ADD COLUMN IF NOT EXISTS username TEXT
+            """)
+            await self.database.execute("""
+                ALTER TABLE pending_ban_requests
+                ADD COLUMN IF NOT EXISTS evidence TEXT
+            """)
+            await self.database.execute("""
+                ALTER TABLE pending_ban_requests
+                ADD COLUMN IF NOT EXISTS reviewed_by BIGINT
+            """)
+            await self.database.execute("""
+                ALTER TABLE pending_ban_requests
+                ADD COLUMN IF NOT EXISTS source_guild_id BIGINT
+            """)
+            await self.database.execute("""
+                ALTER TABLE pending_ban_requests
+                ADD COLUMN IF NOT EXISTS source_guild_name TEXT
+            """)
+            await self.database.execute("""
+                ALTER TABLE pending_ban_requests
+                ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITHOUT TIME ZONE
+            """)
+            await self.database.execute("""
+                ALTER TABLE pending_ban_requests
+                ADD COLUMN IF NOT EXISTS appealable BOOLEAN DEFAULT TRUE
+            """)
+            await self.database.execute("""
+                ALTER TABLE pending_ban_requests
+                ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending'
+            """)
+            await self.database.execute("""
+                ALTER TABLE pending_ban_requests
+                ADD COLUMN IF NOT EXISTS message_id BIGINT
+            """)
+            await self.database.execute("""
+                ALTER TABLE pending_ban_requests
+                ADD COLUMN IF NOT EXISTS channel_id BIGINT
+            """)
+            await self.database.execute("""
+                ALTER TABLE pending_ban_requests
+                ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            """)
+            await self.database.execute("""
+                ALTER TABLE pending_ban_requests
+                ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP WITHOUT TIME ZONE
+            """)
+            logger.info("Ensured pending_ban_requests columns exist")
 
         except Exception as e:
             logger.error(f"Error running migrations: {e}")
@@ -702,6 +776,168 @@ class DatabaseManager:
         except Exception:
             logger.exception(f"Database - Error in deactivate_blacklist for user {user_id}")
             return False
+
+    # -------------------------
+    # Pending ban request operations
+    # -------------------------
+
+    async def create_pending_ban_request(
+        self,
+        user_id: int,
+        username: str,
+        reason: str,
+        evidence: str,
+        requested_by: int,
+        source_guild_id: int,
+        source_guild_name: str,
+        expires_at: datetime = None,
+        appealable: bool = True
+    ) -> int:
+        """Create a new pending ban approval request."""
+        try:
+            user_id = InputSanitizer.validate_discord_id(user_id)
+            requested_by = InputSanitizer.validate_discord_id(requested_by)
+            source_guild_id = InputSanitizer.validate_discord_id(source_guild_id)
+        except ValidationError as e:
+            logger.error(f"Invalid Discord ID in create_pending_ban_request: {e}")
+            raise
+
+        sanitized_data = sanitize_database_input({
+            "username": username or "",
+            "reason": reason,
+            "evidence": evidence or "",
+            "source_guild_name": source_guild_name or ""
+        })
+
+        query = """
+            INSERT INTO pending_ban_requests (
+                user_id,
+                username,
+                reason,
+                evidence,
+                requested_by,
+                source_guild_id,
+                source_guild_name,
+                expires_at,
+                appealable,
+                status
+            )
+            VALUES (
+                :user_id,
+                :username,
+                :reason,
+                :evidence,
+                :requested_by,
+                :source_guild_id,
+                :source_guild_name,
+                :expires_at,
+                :appealable,
+                'pending'
+            )
+            RETURNING id
+        """
+
+        return await self.database.fetch_val(query=query, values={
+            "user_id": user_id,
+            "username": sanitized_data["username"],
+            "reason": sanitized_data["reason"],
+            "evidence": sanitized_data["evidence"],
+            "requested_by": requested_by,
+            "source_guild_id": source_guild_id,
+            "source_guild_name": sanitized_data["source_guild_name"],
+            "expires_at": self.normalize_datetime(expires_at) if expires_at else None,
+            "appealable": appealable
+        })
+
+    async def set_pending_ban_message_id(self, request_id: int, message_id: int, channel_id: int) -> bool:
+        """Save the approval message/channel IDs for a pending request."""
+        query = """
+            UPDATE pending_ban_requests
+            SET message_id = :message_id,
+                channel_id = :channel_id
+            WHERE id = :request_id
+            RETURNING id
+        """
+        updated = await self.database.fetch_one(query=query, values={
+            "request_id": request_id,
+            "message_id": message_id,
+            "channel_id": channel_id
+        })
+        return updated is not None
+
+    async def get_pending_ban_request(self, request_id: int) -> Optional[Dict[str, Any]]:
+        """Get a single pending ban request by ID."""
+        query = """
+            SELECT * FROM pending_ban_requests
+            WHERE id = :request_id
+            LIMIT 1
+        """
+        row = await self.database.fetch_one(query=query, values={"request_id": request_id})
+        return dict(row) if row else None
+
+    async def get_pending_ban_request_by_message(self, message_id: int) -> Optional[Dict[str, Any]]:
+        """Get a pending ban request by approval message ID."""
+        query = """
+            SELECT * FROM pending_ban_requests
+            WHERE message_id = :message_id
+            LIMIT 1
+        """
+        row = await self.database.fetch_one(query=query, values={"message_id": message_id})
+        return dict(row) if row else None
+
+    async def get_pending_ban_requests(self, status: str = "pending", limit: int = 100) -> List[Dict[str, Any]]:
+        """Get pending ban requests by status."""
+        query = """
+            SELECT * FROM pending_ban_requests
+            WHERE status = :status
+            ORDER BY created_at ASC
+            LIMIT :limit
+        """
+        rows = await self.database.fetch_all(query=query, values={
+            "status": status,
+            "limit": limit
+        })
+        return [dict(row) for row in rows]
+
+    async def update_pending_ban_request_status(
+        self,
+        request_id: int,
+        status: str,
+        reviewed_by: Optional[int] = None
+    ) -> bool:
+        """Update request status to approved/denied/etc."""
+        if status not in {"pending", "approved", "denied", "cancelled", "failed"}:
+            logger.warning(f"Invalid pending ban request status: {status}")
+            return False
+
+        query = """
+            UPDATE pending_ban_requests
+            SET status = :status,
+                reviewed_by = :reviewed_by,
+                reviewed_at = CASE
+                    WHEN :status IN ('approved', 'denied', 'cancelled', 'failed')
+                    THEN CURRENT_TIMESTAMP
+                    ELSE reviewed_at
+                END
+            WHERE id = :request_id
+            RETURNING id
+        """
+        updated = await self.database.fetch_one(query=query, values={
+            "request_id": request_id,
+            "status": status,
+            "reviewed_by": reviewed_by
+        })
+        return updated is not None
+
+    async def delete_pending_ban_request(self, request_id: int) -> bool:
+        """Delete a pending ban request."""
+        query = """
+            DELETE FROM pending_ban_requests
+            WHERE id = :request_id
+            RETURNING id
+        """
+        deleted = await self.database.fetch_one(query=query, values={"request_id": request_id})
+        return deleted is not None
 
     # -------------------------
     # Configuration operations
